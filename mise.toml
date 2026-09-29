@@ -1,0 +1,178 @@
+[tools]
+git-cliff = "latest"
+pinact = "latest"
+zizmor = "latest"
+rumdl = "latest"
+shellcheck = "latest"
+prek = "latest"
+
+# Rust
+
+[tasks.build]
+description = "Compile an optimized binary into target/release"
+run = "cargo build --locked --release"
+
+[tasks."dev:build"]
+description = "Run standard build with pretty interactive output"
+alias = "b"
+run = "cargo pretty build --locked"
+raw = true
+
+[tasks.install]
+description = "Install the checkout's binary on your PATH"
+run = "cargo install --path . --locked --force"
+
+[tasks.fmt]
+description = "Rewrite every file to the rustfmt style"
+run = "cargo fmt --all"
+
+[tasks."lint:clippy"]
+description = "Lint every target and feature, treating warnings as errors"
+run = "cargo clippy --all-targets --all-features --locked -- -D warnings"
+
+# Herdr
+
+[tasks."herdr:link"]
+description = "Point Herdr at the checkout"
+run = "herdr plugin link ."
+
+[tasks."herdr:unlink"]
+description = "Detach Herdr from the checkout, leaving the checkout itself alone"
+run = "herdr plugin unlink wtherdr"
+
+[tasks."herdr:install"]
+description = "Install the published plugin from GitHub"
+run = "herdr plugin install gwenwindflower/wtherdr"
+
+[tasks."herdr:uninstall"]
+description = "Remove the plugin from Herdr"
+run = "herdr plugin uninstall wtherdr"
+
+[tasks."herdr:status"]
+description = "Report how Herdr sees wtherdr: linked or installed, its version, panes, and actions"
+run = "herdr plugin list --plugin wtherdr"
+
+# Development loop
+
+[tasks.dev]
+description = "The local loop: every check, then install and link the checkout"
+alias = "d"
+run = ["mise run check", "mise run dev:reload"]
+
+[tasks."dev:reload"]
+description = "Install the checkout and link it into Herdr"
+run = ["mise run install", "mise run herdr:link"]
+
+[tasks."dev:local"]
+description = "Replace a GitHub install with this checkout"
+run = ["mise run herdr:uninstall", "mise run install", "mise run herdr:link"]
+
+[tasks."dev:released"]
+description = "Replace the checkout with the published plugin, as a user receives it"
+run = [
+  "mise run herdr:unlink",
+  "cargo binstall wtherdr --git https://github.com/gwenwindflower/wtherdr",
+  "mise run herdr:install",
+]
+
+# Tests
+
+[tasks."dev:test"]
+description = "Run the Rust tests with pretty interactive output"
+alias = "t"
+run = "cargo pretty test --all-features --locked"
+raw = true
+
+[tasks."test:rust"]
+description = "Run the Rust test suite"
+run = "cargo test --all-features --locked"
+
+[tasks."test:manifest"]
+description = "Validate the plugin manifest"
+run = "./tests/plugin-manifest.sh"
+deny_net = true
+deny_write = true
+
+[tasks."test:installer"]
+description = "Exercise the plugin's install script"
+run = "./tests/install-binary.sh"
+
+[tasks."test:versioning"]
+description = "Exercise the version tasks against sandbox repositories"
+run = "./tests/versioning.sh"
+
+[tasks.test]
+description = "Run every test suite"
+alias = "ta"
+depends = ["test:*"]
+
+[tasks."test:workflows"]
+description = "Verify automated gates run noninteractive checks without installing wtherdr"
+run = "./tests/task-workflows.sh"
+
+[tasks."test:build"]
+description = "Verify the optimized binary builds"
+depends = ["build"]
+
+[tasks."test:crate"]
+description = "Compile the packaged crate without uploading it"
+run = "cargo package --locked --allow-dirty"
+
+# Checks
+
+[tasks."lint:hooks"]
+description = "Run every commit hook against the whole tree"
+run = "prek run --all-files"
+
+[tasks."hooks:install"]
+description = "Install the pre-commit and commit-msg hooks into this clone"
+run = "prek install --hook-type pre-commit --hook-type commit-msg"
+
+[tasks.check]
+description = "Run every check CI runs"
+alias = "c"
+depends = ["lint:*", "version:check", "test:*"]
+
+# Dependencies
+
+[tasks."deps:check"]
+description = "Preview compatible lockfile updates and dependency requirement upgrades"
+run = ["cargo update --dry-run", "cargo upgrade --dry-run --incompatible allow"]
+
+[tasks."deps:update"]
+description = "Update Cargo.lock to the latest versions allowed by Cargo.toml"
+run = "cargo update"
+
+[tasks."deps:audit"]
+description = "Audit Cargo.lock for known vulnerabilities and yanked crates"
+run = "cargo audit"
+
+[tasks."ci-audit:zizmor"]
+description = "Audit the GitHub Actions workflows for security issues"
+run = "zizmor ."
+deny_write = true
+
+[tasks.ci-audit]
+description = "Run both workflow audits"
+alias = "ca"
+depends = ["ci-audit:zizmor", "ci-audit:pinact"]
+
+# Release
+
+[tasks."release:check"]
+description = "The full pre-release gate: every check plus both workflow audits"
+depends = ["check", "ci-audit"]
+
+[tasks."release:push"]
+description = "Push the release commit to origin/main, where GitHub will tag it"
+confirm = "Push the release commit to origin/main?"
+run = "git push origin main"
+
+[tasks."release:verify"]
+description = "Inspect the published release, its build workflow, and its uploaded assets"
+run = '''
+version="$(gh release view --json tagName --jq '.tagName')"
+gh release view "$version"
+gh run list --workflow release-build.yml --limit 5
+gh release view "$version" --json assets --jq '.assets[].name'
+'''

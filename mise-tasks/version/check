@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+#MISE description="Report version drift across Cargo.toml, Cargo.lock, and herdr-plugin.toml"
+#USAGE arg "[tag]" help="Also assert Cargo.toml declares this release, as in v0.1.0"
+
+set -euo pipefail
+cd "${MISE_PROJECT_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
+
+expected="${usage_tag:-${1:-}}"
+
+cargo_version="$(mise-tasks/version/cargo)"
+lock_version="$(mise-tasks/version/lock)"
+manifest_version="$(mise-tasks/version/manifest)"
+drift=0
+
+printf 'Cargo.toml         %s\n' "${cargo_version:-none}"
+printf 'Cargo.lock         %s\n' "${lock_version:-none}"
+printf 'herdr-plugin.toml  %s\n' "${manifest_version:-none}"
+
+if [[ -z "$cargo_version" ]]; then
+	printf 'Cargo.toml declares no package version.\n' >&2
+	exit 1
+fi
+if [[ "$lock_version" != "$cargo_version" ]]; then
+	printf 'Cargo.lock is out of sync; run mise run version:sync.\n' >&2
+	drift=1
+fi
+if [[ "$manifest_version" != "$cargo_version" ]]; then
+	printf 'herdr-plugin.toml is out of sync; run mise run version:sync.\n' >&2
+	drift=1
+fi
+if [[ -n "$expected" && "${expected#v}" != "$cargo_version" ]]; then
+	printf 'Cargo.toml declares %s; %s expects %s.\n' "$cargo_version" "$expected" "${expected#v}" >&2
+	drift=1
+fi
+
+exit "$drift"

@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+#MISE description="Render the notes git-cliff will publish for the pending release"
+#MISE quiet=true
+#USAGE arg "[tag]" help="Release tag to render notes for; defaults to version:next" env="TAG"
+
+set -euo pipefail
+cd "${MISE_PROJECT_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
+
+tag="${usage_tag:-${1:-}}"
+[[ -n "$tag" ]] || tag="$(mise-tasks/version/next)"
+
+git cliff --unreleased --tag "$tag" --strip all

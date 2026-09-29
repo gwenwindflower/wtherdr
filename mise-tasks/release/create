@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+#MISE description="Publish the GitHub release, which creates the tag at the head of main"
+#MISE confirm="Publish the GitHub release? This creates the tag and is public."
+#USAGE arg "[tag]" help="Release tag to publish; defaults to version:next" env="TAG"
+
+set -euo pipefail
+cd "${MISE_PROJECT_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
+
+tag="${usage_tag:-${1:-}}"
+[[ -n "$tag" ]] || tag="$(mise-tasks/version/next)"
+
+git fetch --quiet origin main
+if [[ "$(git rev-parse HEAD)" != "$(git rev-parse origin/main)" ]]; then
+	printf 'HEAD does not match origin/main; push the release commit first.\n' >&2
+	exit 1
+fi
+
+notes="$(mise-tasks/release/notes "$tag")"
+printf '%s\n' "$notes" | gh release create "$tag" --title "$tag" --notes-file -

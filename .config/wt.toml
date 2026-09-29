@@ -1,0 +1,2 @@
+[pre-merge]
+gate = "mise run {% if target == default_branch %}release:check{% else %}check{% endif %}"

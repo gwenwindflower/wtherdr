@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+#MISE description="Print the version declared in herdr-plugin.toml"
+#MISE quiet=true
+
+set -euo pipefail
+cd "${MISE_PROJECT_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
+
+awk '
+  /^\[/ { exit }
+  /^version = / { sub(/^[^"]*"/, ""); sub(/".*$/, ""); print; exit }
+' herdr-plugin.toml

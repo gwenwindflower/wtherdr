@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+# commit-msg hook: reject subjects git-cliff cannot parse, so release notes never fail on them.
+
+set -euo pipefail
+
+subject="$(grep -v '^#' "$1" | sed -n '1p')"
+types='feat|fix|perf|refactor|test|agent|docs|build|ci|style|chore'
+
+if [[ "$subject" =~ ^(Merge|Revert|fixup!|squash!|amend!) ]]; then
+	exit 0
+fi
+if [[ ! "$subject" =~ ^(${types})(\([a-z0-9._/-]+\))?!?:\ [^\ ].*$ ]]; then
+	printf 'Commit subject is not a Conventional Commit: %s\nExpected type(scope): subject with type one of %s.\n' "$subject" "${types//|/, }" >&2
+	exit 1
+fi
+if ((${#subject} > 70)); then
+	printf 'Commit subject is %d characters; keep it at 70 or fewer.\n' "${#subject}" >&2
+	exit 1
+fi

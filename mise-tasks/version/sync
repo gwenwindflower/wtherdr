@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+#MISE description="Repair Cargo.lock and herdr-plugin.toml to match Cargo.toml"
+
+set -euo pipefail
+cd "${MISE_PROJECT_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
+
+cargo_version="$(mise-tasks/version/cargo)"
+
+if ! awk -v version="$cargo_version" '
+  !synced && /^version = / { print "version = \"" version "\""; synced = 1; next }
+  { print }
+  END { if (!synced) exit 1 }
+' herdr-plugin.toml >herdr-plugin.toml.next; then
+	rm -f herdr-plugin.toml.next
+	printf 'herdr-plugin.toml declares no version to sync.\n' >&2
+	exit 1
+fi
+mv herdr-plugin.toml.next herdr-plugin.toml
+
+cargo update --workspace
+
+mise-tasks/version/check

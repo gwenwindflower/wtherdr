@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+#MISE description="The release pipeline, end to end, from a clean local main"
+#USAGE arg "[tag]" help="Release tag to publish; defaults to version:next"
+
+set -euo pipefail
+cd "${MISE_PROJECT_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
+
+TAG="${usage_tag:-${1:-}}"
+[[ -n "$TAG" ]] || TAG="$(mise-tasks/version/next)"
+export TAG
+
+mise run release:preflight
+mise run version:bump
+mise run release:check
+mise run release:commit
+mise run release:notes
+
+mise run release:push
+mise run release:create
+
+printf '\nReleased %s. Run mise run release:verify once the build workflow finishes.\n' "$TAG"

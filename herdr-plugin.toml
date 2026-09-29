@@ -1,0 +1,89 @@
+id = "wtherdr"
+name = "wtherdr"
+version = "0.0.1"
+min_herdr_version = "0.7.5"
+description = "Run Worktrunk's native worktree workflows in Herdr popups and keep nested workspaces in sync."
+platforms = ["linux", "macos"]
+
+[[build]]
+command = ["sh", "scripts/install-binary.sh"]
+
+[[actions]]
+id = "create"
+title = "󱓊 wt create"
+contexts = ["workspace"]
+command = ["wtherdr", "popup", "create"]
+
+[[actions]]
+id = "switch"
+title = "󱓎 wt switch"
+contexts = ["workspace"]
+command = ["wtherdr", "popup", "switch"]
+
+[[actions]]
+id = "merge"
+title = " wt merge"
+contexts = ["workspace"]
+command = ["wtherdr", "popup", "merge"]
+
+[[actions]]
+id = "remove"
+title = "󱓌 wt remove"
+contexts = ["workspace"]
+command = ["wtherdr", "popup", "remove"]
+
+[[panes]]
+id = "create"
+title = "󱓊 wt create"
+placement = "popup"
+width = 72
+height = 7
+command = ["wtherdr", "prompt", "create"]
+
+[[panes]]
+id = "merge"
+title = " wt merge"
+placement = "popup"
+width = 72
+height = 7
+command = ["wtherdr", "prompt", "merge"]
+
+[[panes]]
+id = "remove"
+title = "󱓌 wt remove"
+placement = "popup"
+width = 72
+height = 7
+command = ["wtherdr", "prompt", "remove"]
+
+[[panes]]
+id = "create-run"
+title = "󱓊 wt create"
+placement = "popup"
+width = "90%"
+height = "85%"
+command = ["wtherdr", "run", "create"]
+
+[[panes]]
+id = "switch-run"
+title = "󱓎 wt switch"
+placement = "popup"
+width = "90%"
+height = "85%"
+command = ["wtherdr", "run", "switch"]
+
+[[panes]]
+id = "merge-run"
+title = " wt merge"
+placement = "popup"
+width = "90%"
+height = "85%"
+command = ["wtherdr", "run", "merge"]
+
+[[panes]]
+id = "remove-run"
+title = "󱓌 wt remove"
+placement = "popup"
+width = "90%"
+height = "85%"
+command = ["wtherdr", "run", "remove"]

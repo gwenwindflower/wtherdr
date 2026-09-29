@@ -1,0 +1,32 @@
+[package]
+name = "wtherdr"
+version = "0.0.1"
+edition = "2024"
+description = "A fast, light herdr-worktrunk integration that is actually good"
+readme = "README.md"
+repository = "https://github.com/gwenwindflower/wtherdr"
+license = "GPL-3.0-or-later"
+keywords = ["herdr-plugin", "worktrunk"]
+categories = ["command-line-utilities", "development-tools"]
+include = ["Cargo.lock", "Cargo.toml", "LICENSE", "README.md", "src/**"]
+
+[package.metadata.binstall]
+pkg-url = "{ repo }/releases/download/v{ version }/{ name }-{ target }-v{ version }{ archive-suffix }"
+bin-dir = "{ name }-{ target }-v{ version }/{ bin }{ binary-ext }"
+pkg-fmt = "tgz"
+disabled-strategies = ["quick-install", "compile"]
+
+[dependencies]
+anyhow = "1"
+clap = { version = "4", features = ["derive", "wrap_help"] }
+libc = "0.2.189"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[lints.clippy]
+pedantic = "warn"
+
+[profile.release]
+strip = true
+lto = true
+codegen-units = 1

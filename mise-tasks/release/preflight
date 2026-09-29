@@ -1,0 +1,59 @@
+#!/usr/bin/env bash
+#MISE description="Assert the repository is ready to release, reporting every problem it finds"
+#USAGE arg "[tag]" help="Release tag to check for; defaults to version:next" env="TAG"
+
+set -euo pipefail
+cd "${MISE_PROJECT_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
+
+problems=0
+problem() {
+	printf '  ✗ %s\n' "$1" >&2
+	problems=1
+}
+
+for tool in git cargo git-cliff gh zizmor pinact; do
+	if ! command -v "$tool" >/dev/null 2>&1; then
+		problem "required command is unavailable: $tool"
+	fi
+done
+if ! gh auth status >/dev/null 2>&1; then
+	problem 'the GitHub CLI is not authenticated'
+fi
+if [[ "$problems" -ne 0 ]]; then
+	printf 'Preflight failed: run mise install, then authenticate gh.\n' >&2
+	exit 1
+fi
+
+tag="${usage_tag:-${1:-}}"
+[[ -n "$tag" ]] || tag="$(mise-tasks/version/next)"
+
+branch="$(git branch --show-current)"
+if [[ "$branch" != main ]]; then
+	problem "releases run from main; this is ${branch:-a detached HEAD}"
+fi
+if [[ -n "$(git status --porcelain)" ]]; then
+	problem 'the worktree has uncommitted changes'
+fi
+if ! git fetch --quiet origin main --tags; then
+	problem 'could not fetch origin/main and its tags'
+fi
+if ! git merge-base --is-ancestor origin/main HEAD; then
+	problem 'local main is behind origin/main; rebase first'
+fi
+if git show-ref --verify --quiet "refs/tags/$tag"; then
+	problem "$tag already exists locally"
+fi
+
+remote_tag=0
+git ls-remote --exit-code --tags origin "refs/tags/$tag" >/dev/null 2>&1 || remote_tag=$?
+if [[ "$remote_tag" -eq 0 ]]; then
+	problem "$tag already exists on GitHub"
+elif [[ "$remote_tag" -ne 2 ]]; then
+	problem "could not reach GitHub to check whether $tag is free"
+fi
+
+if [[ "$problems" -ne 0 ]]; then
+	printf 'Preflight failed for %s.\n' "$tag" >&2
+	exit 1
+fi
+printf 'Ready to release %s.\n' "$tag"

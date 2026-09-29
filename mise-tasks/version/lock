@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+#MISE description="Print the version Cargo.lock records for the wtherdr package"
+#MISE quiet=true
+
+set -euo pipefail
+cd "${MISE_PROJECT_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
+
+awk '
+  /^\[\[package\]\]$/ { wtherdr = 0; next }
+  /^name = "wtherdr"$/ { wtherdr = 1; next }
+  wtherdr && /^version = / { sub(/^[^"]*"/, ""); sub(/".*$/, ""); print; exit }
+' Cargo.lock

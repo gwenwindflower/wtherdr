@@ -1,0 +1,32 @@
+# Hooks that run on every commit, scoped to the staged files. Whole-repo checks are mise tasks;
+# `mise run lint:hooks` runs these same hooks across the tree, and CI runs it too.
+
+default_stages = ["pre-commit"]
+
+[[repos]]
+repo = "builtin"
+hooks = [
+  { id = "trailing-whitespace" },
+  { id = "end-of-file-fixer" },
+  { id = "mixed-line-ending", args = ["--fix=lf"] },
+  { id = "fix-byte-order-marker" },
+  { id = "check-merge-conflict" },
+  { id = "check-added-large-files", args = ["--maxkb=1024"] },
+  { id = "detect-private-key" },
+  { id = "check-yaml" },
+  { id = "check-toml" },
+  { id = "check-json" },
+  { id = "check-symlinks" },
+  { id = "check-shebang-scripts-are-executable" },
+  { id = "check-executables-have-shebangs" },
+]
+
+[[repos]]
+repo = "local"
+hooks = [
+  { id = "shellcheck", name = "shellcheck", language = "system", entry = "shellcheck --format=gcc", types = ["shell"] },
+  { id = "rumdl", name = "rumdl", language = "system", entry = "rumdl check --no-cache", types = ["markdown"] },
+  { id = "zizmor", name = "zizmor", language = "system", entry = "zizmor", files = "^\\.github/workflows/.*\\.ya?ml$" },
+  { id = "conventional-commit", name = "conventional commit subject", language = "script", entry = "scripts/check-commit-message", stages = ["commit-msg"] },
+  { id = "rustfmt", name = "rustfmt", language = "system", entry = "rustfmt --edition 2024", types = ["rust"] },
+]

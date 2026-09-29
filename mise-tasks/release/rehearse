@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+#MISE description="Dry run: every read-only step of the release, touching nothing"
+#USAGE arg "[tag]" help="Release tag to rehearse; defaults to version:next" env="TAG"
+
+set -euo pipefail
+cd "${MISE_PROJECT_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
+
+tag="${usage_tag:-${1:-}}"
+[[ -n "$tag" ]] || tag="$(mise-tasks/version/next)"
+
+printf 'Rehearsing release %s\n\n' "$tag"
+mise-tasks/release/preflight "$tag"
+mise-tasks/version/check
+mise run release:check
+mise-tasks/release/notes "$tag"
+printf '\nRehearsal passed. A release would bump to %s, commit, push, and publish these notes.\n' "$tag"

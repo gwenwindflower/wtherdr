@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+#MISE description="Verify every workflow action is pinned to a commit SHA with a version comment"
+
+set -euo pipefail
+cd "${MISE_PROJECT_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
+
+if [[ -z "${GITHUB_TOKEN:-}" ]]; then
+	printf 'Running unauthenticated; set GITHUB_TOKEN if GitHub rate limits this audit.\n' >&2
+fi
+
+pinact run --check --verify-comment

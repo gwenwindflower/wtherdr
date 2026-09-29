@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+#MISE description="Commit the synchronized version files as the release's preparation commit"
+#USAGE arg "[tag]" help="Release tag the commit prepares; defaults to version:next" env="TAG"
+
+set -euo pipefail
+cd "${MISE_PROJECT_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
+
+tag="${usage_tag:-${1:-}}"
+[[ -n "$tag" ]] || tag="$(mise-tasks/version/next)"
+
+pending="$(git status --porcelain)"
+version_files="$(git status --porcelain -- Cargo.toml Cargo.lock herdr-plugin.toml)"
+
+if [[ -z "$pending" ]]; then
+	printf 'Version files already match %s; no release commit needed.\n' "$tag"
+	exit 0
+fi
+if [[ "$pending" != "$version_files" ]]; then
+	printf 'Only version files may change during a release:\n%s\n' "$pending" >&2
+	exit 1
+fi
+
+git add -- Cargo.toml Cargo.lock herdr-plugin.toml
+git commit -m "chore(release): prepare $tag"
