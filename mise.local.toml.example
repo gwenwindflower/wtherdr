@@ -4,4 +4,4 @@
 # shows the list mise is honoring. `disable_tools` also hides a same-named global tool here.
 
 [settings]
-disable_tools = ["git-cliff", "pinact", "zizmor", "shellcheck", "prek", "rumdl"]
+disable_tools = ["git-cliff", "pinact", "zizmor", "shellcheck", "prek", "rumdl", "jq"]

@@ -5,6 +5,7 @@ zizmor = "latest"
 rumdl = "latest"
 shellcheck = "latest"
 prek = "latest"
+jq = "latest"
 
 # Rust
 
@@ -109,6 +110,14 @@ depends = ["test:*"]
 [tasks."test:workflows"]
 description = "Verify automated gates run noninteractive checks without installing wtherdr"
 run = "./tests/task-workflows.sh"
+
+[tasks."test:labels"]
+description = "Verify repository labels reconcile against the declared list"
+run = "bash tests/repo-labels.sh"
+
+[tasks."test:rulesets"]
+description = "Verify branch rules require CI checks without release-only jobs"
+run = "bash tests/repo-rulesets.sh"
 
 [tasks."test:build"]
 description = "Verify the optimized binary builds"

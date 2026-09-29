@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+#MISE description="Apply the standard GitHub repository settings: squash or rebase merges only, linear-friendly defaults, no wiki or projects"
+#USAGE flag "--description <text>" help="Repository description"
+#USAGE flag "--topics <list>" help="Comma-separated topics to add"
+
+set -euo pipefail
+cd "${MISE_PROJECT_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
+
+repo="$(gh repo view --json nameWithOwner --jq .nameWithOwner)"
+
+args=(
+	--enable-merge-commit=false
+	--enable-squash-merge=true
+	--enable-rebase-merge=true
+	--delete-branch-on-merge=true
+	--enable-wiki=false
+	--enable-projects=false
+	--enable-discussions=true
+	--enable-issues=true
+)
+[[ -z "${usage_description:-}" ]] || args+=(--description "$usage_description")
+if [[ -n "${usage_topics:-}" ]]; then
+	IFS=',' read -ra topics <<<"$usage_topics"
+	for topic in "${topics[@]}"; do
+		args+=(--add-topic "${topic// /}")
+	done
+fi
+
+gh repo edit "$repo" "${args[@]}"
+
+printf 'Settings applied to %s.\n' "$repo"

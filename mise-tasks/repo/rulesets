@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+#MISE description="Create or update the main-branch ruleset from the latest completed CI run"
+
+set -euo pipefail
+cd "${MISE_PROJECT_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
+
+repo="$(gh repo view --json nameWithOwner --jq .nameWithOwner)"
+ruleset_file=.github/rulesets/main.json
+name="$(jq -r .name "$ruleset_file")"
+
+run="$(gh run list --repo "$repo" --workflow ci.yml --branch main --event push --status completed --limit 1 --json databaseId --jq '.[0].databaseId // empty')"
+if [[ -z "$run" ]]; then
+	printf 'No completed CI run found on main yet; push once and let CI finish, then rerun.\n' >&2
+	exit 1
+fi
+checks="$(gh run view "$run" --repo "$repo" --json jobs --jq '[.jobs[].name] | unique')"
+if [[ "$checks" == "[]" ]]; then
+	printf 'CI run %s contains no jobs; refusing to configure empty required checks.\n' "$run" >&2
+	exit 1
+fi
+
+body="$(jq --argjson checks "$checks" '
+	.rules += [{
+		type: "required_status_checks",
+		parameters: {
+			strict_required_status_checks_policy: true,
+			required_status_checks: ($checks | map({context: .}))
+		}
+	}]
+' "$ruleset_file")"
+
+existing="$(gh api "repos/$repo/rulesets" --jq ".[] | select(.name == \"$name\") | .id")"
+if [[ -n "$existing" ]]; then
+	printf '%s' "$body" | gh api --method PUT "repos/$repo/rulesets/$existing" --input - >/dev/null
+	printf 'Updated ruleset %s (%s), requiring: %s\n' "$name" "$existing" "$(jq -r 'join(", ")' <<<"$checks")"
+else
+	printf '%s' "$body" | gh api --method POST "repos/$repo/rulesets" --input - >/dev/null
+	printf 'Created ruleset %s, requiring: %s\n' "$name" "$(jq -r 'join(", ")' <<<"$checks")"
+fi

@@ -1,0 +1,14 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 🤠 Ask for help
+    url: ../../discussions/categories/help
+    about: Questions, "is this expected?", setup trouble, "how do I…?" — Discussions is the right home.
+  - name: 🧐 Share an idea
+    url: ../../discussions/categories/ideas
+    about: Open-ended ideas, "what if…?", design conversations. Concrete suggestions can graduate to issues later.
+  - name: 😍 Show what you built
+    url: ../../discussions/categories/share
+    about: Cool stuff you've built with or for this project — we love to see it.
+  - name: 🔒 Report a security vulnerability
+    url: ../../security/advisories/new
+    about: Please use private vulnerability reporting, not a public issue.

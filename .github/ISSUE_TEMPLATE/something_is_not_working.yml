@@ -1,0 +1,82 @@
+name: Something is not working
+description: A concrete, reproducible bug — unexpected behavior, a crash, or a clear contract violation.
+title: "fix: <short summary of what's broken>"
+labels:
+  - "type: bug"
+  - "status: triage"
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to file a bug. A few notes before you start:
+
+        - **Not sure if it's a bug?** Open a [Help discussion](../../discussions/categories/help) instead — questions, "is this expected?", and unclear behavior all belong there.
+        - **Bug means reproducible.** Issues without a clear repro tend to get auto-closed (warmly!) so the queue stays useful. See [CONTRIBUTING.md](../../blob/main/CONTRIBUTING.md) for what we look for.
+        - **Security issue?** Please use [private vulnerability reporting](../../security/advisories/new) instead, not a public issue.
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: A clear, specific description of the unexpected behavior.
+      placeholder: When I run `foo --bar`, it returns X. I expected Y.
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: The smallest sequence that demonstrates the bug. Include commands, inputs, and any relevant config.
+      placeholder: |
+        1. ...
+        2. ...
+        3. ...
+      render: markdown
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: What did you expect to happen instead?
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: Output of `wtherdr --version` (or the commit SHA if running from source).
+      placeholder: e.g. 0.0.1
+    validations:
+      required: true
+
+  - type: input
+    id: env
+    attributes:
+      label: Environment
+      description: OS, shell, and anything else that might be relevant (runtime or toolchain version, terminal emulator, etc.).
+      placeholder: e.g. macOS 15, fish 4.0, plus Herdr and Worktrunk versions
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs or output
+      description: Any error messages, stack traces, or relevant output. Paste in code blocks.
+      render: text
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: pre-flight
+    attributes:
+      label: Pre-flight
+      options:
+        - label: I searched [existing issues](../../issues?q=is%3Aissue) and [Discussions](../../discussions) and didn't find a duplicate.
+          required: true
+        - label: I've read [CONTRIBUTING.md](../../blob/main/CONTRIBUTING.md) and this is a concrete, reproducible bug (not a question or idea).
+          required: true

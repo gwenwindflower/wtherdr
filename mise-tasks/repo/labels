@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+#MISE description="Create missing labels and delete labels absent from .github/labels.yml"
+
+set -euo pipefail
+cd "${MISE_PROJECT_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
+
+repo="$(gh repo view --json nameWithOwner --jq .nameWithOwner)"
+
+# labels.yml is a flat list of {name, color, description} mappings with double-quoted scalars.
+desired="$(awk -F'"' '
+	/^- name:/ { name = $2 }
+	/^  color:/ { color = $2 }
+	/^  description:/ { print name "\t" color "\t" $2 }
+' .github/labels.yml)"
+if [[ -z "$desired" ]]; then
+	printf 'No labels found in .github/labels.yml; refusing to reconcile.\n' >&2
+	exit 1
+fi
+desired_names="$(printf '%s\n' "$desired" | cut -f1)"
+existing="$(gh api "repos/$repo/labels?per_page=100" --paginate --jq '.[].name')"
+
+while IFS=$'\t' read -r name color description; do
+	if grep -Fxq -- "$name" <<<"$existing"; then
+		printf '  Skipped %s\n' "$name"
+		continue
+	fi
+	gh label create "$name" --repo "$repo" --color "$color" --description "$description"
+	printf '  Created %s\n' "$name"
+done <<<"$desired"
+
+while IFS= read -r name; do
+	[[ -n "$name" ]] || continue
+	if ! grep -Fxq -- "$name" <<<"$desired_names"; then
+		gh label delete "$name" --repo "$repo" --yes
+		printf '  Deleted %s\n' "$name"
+	fi
+done <<<"$existing"

@@ -4,6 +4,7 @@ A Herdr plugin that runs Worktrunk's worktree workflows in Herdr popups and keep
 
 docs/architecture.md — process lifecycle, module boundaries, environment contract, reconciliation rules
 docs/popups.md — popup entrypoints, dialog chrome and keys, Herdr's popup constraints
+docs/repository.md — GitHub settings, labels, rulesets, and community setup
 
 ## Structure
 

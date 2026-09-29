@@ -1,0 +1,59 @@
+name: I have a suggestion
+description: A concrete, well-shaped change — a missing flag, a small UX improvement, a documented inconsistency.
+title: "feat: <short summary of the change>"
+labels:
+  - "type: feature"
+  - "status: triage"
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the suggestion! A quick orientation:
+
+        - **Just an idea, or want to talk shape?** Open an [Ideas discussion](../../discussions/categories/ideas) instead. We'd rather chat there than auto-close a half-formed issue.
+        - **Concrete suggestions only here.** An issue should describe the change well enough that a contributor could pick it up cold — what changes, where, and why. Vague or speculative suggestions tend to get auto-closed (warmly!) — see [CONTRIBUTING.md](../../blob/main/CONTRIBUTING.md).
+        - **Big or opinionated changes?** Please start in Discussions first so we can align before you (or anyone) writes code.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem does this solve?
+      description: The user-facing pain or gap. Concrete examples beat abstract framing.
+      placeholder: When I try to do X, I have to Y, which is awkward because Z.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed change
+      description: What specifically would change? New flag, new command, changed default, doc fix — be concrete.
+      placeholder: Add `--baz` to the `foo` command so that ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Other approaches you thought about, and why this one wins.
+    validations:
+      required: false
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: Anything else
+      description: Mockups, related issues, prior art, links to relevant Discussions, etc.
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: pre-flight
+    attributes:
+      label: Pre-flight
+      options:
+        - label: I searched [existing issues](../../issues?q=is%3Aissue) and [Discussions](../../discussions) and didn't find a duplicate.
+          required: true
+        - label: This is a concrete, actionable change — not an open-ended idea or question (those go in [Discussions](../../discussions)).
+          required: true
