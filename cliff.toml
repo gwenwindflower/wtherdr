@@ -54,7 +54,7 @@ topo_order = true
 sort_commits = "oldest"
 
 [bump]
-initial_tag = "v0.1.0"
+initial_tag = "v0.0.1"
 breaking_always_bump_major = false
 features_always_bump_minor = false
 
