@@ -92,7 +92,7 @@ run = "cargo test --all-features --locked"
 description = "Validate the plugin manifest"
 run = "./tests/plugin-manifest.sh"
 deny_net = true
-deny_write = true
+allow_write = ["~/.cache/zizmor"]
 
 [tasks."test:installer"]
 description = "Exercise the plugin's install script"
@@ -159,7 +159,7 @@ run = "cargo audit"
 [tasks."ci-audit:zizmor"]
 description = "Audit the GitHub Actions workflows for security issues"
 run = "zizmor ."
-deny_write = true
+allow_write = ["~/.cache/zizmor"]
 
 [tasks.ci-audit]
 description = "Run both workflow audits"
