@@ -161,6 +161,10 @@ Releases run from a clean local `main` with `gh` authenticated. `mise run releas
 
 GitHub creates the release tag at the default-branch head. The `Release build` workflow verifies the tag against Cargo, builds each supported target, and attaches archives and checksums. `mise run release:verify` inspects the published result.
 
+`release:package <target>` builds and packages the binary for x86_64 and aarch64 on Linux and macOS. `release:recover-assets <run>` verifies checksums from a completed release run and asks before uploading recovered assets.
+
+For the first crates.io publication, check out the published release tag after all binary assets are uploaded and run `mise run release:bootstrap-crate`. This task asks before publishing with your local Cargo credentials. Configure the trusted publisher and release environment as described in [repository setup](docs/repository.md), then enable `CRATES_IO_PUBLISHING` for subsequent OIDC publication.
+
 ## License
 
 Copyright (C) 2026 Gwyneth Windflower.

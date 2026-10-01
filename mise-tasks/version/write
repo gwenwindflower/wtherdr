@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+#MISE description="Set the package version in Cargo.toml, then resync Cargo.lock and herdr-plugin.toml"
+#USAGE arg "<version>" help="Version to declare, as in 1.2.3"
+
+set -euo pipefail
+cd "${MISE_PROJECT_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
+
+version="${usage_version:-${1:?version required}}"
+
+rewrite_version() {
+	local file="$1" scope="$2"
+	if ! awk -v version="$version" -v scope="$scope" '
+	  BEGIN { in_scope = (scope == "") }
+	  scope != "" && $0 == "[" scope "]" { in_scope = 1; print; next }
+	  /^\[/ { in_scope = 0 }
+	  in_scope && !written && /^[[:space:]]*version[[:space:]]*=/ {
+	    print "version = \"" version "\""
+	    written = 1
+	    next
+	  }
+	  { print }
+	  END { if (!written) exit 1 }
+	' "$file" >"$file.next"; then
+		rm -f "$file.next"
+		printf '%s declares no version to write.\n' "$file" >&2
+		exit 1
+	fi
+	mv "$file.next" "$file"
+}
+
+rewrite_version Cargo.toml package
+rewrite_version herdr-plugin.toml ""
+cargo update --workspace --offline

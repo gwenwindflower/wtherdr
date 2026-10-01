@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+#MISE description="Upload verified binary artifacts from a completed release run"
+#MISE confirm="Upload this run's binary artifacts to its existing GitHub release?"
+#USAGE arg "<run>" help="GitHub Actions release run ID"
+set -euo pipefail
+cd "${MISE_PROJECT_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
+
+run="${usage_run:-${1:?release run ID required}}"
+repo="gwenwindflower/wtherdr"
+metadata="$(gh api "repos/$repo/actions/runs/$run" --jq '[.event, .status, .path, .head_branch, .head_sha] | @tsv')"
+IFS=$'\t' read -r event status workflow tag commit <<<"$metadata"
+if [[ "$event" != release || "$status" != completed || "$workflow" != .github/workflows/release-build.yml || ! "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+  printf 'Recovery requires a completed Release build run for a release tag.\n' >&2
+  exit 1
+fi
+if [[ "$(gh api "repos/$repo/commits/$tag" --jq .sha)" != "$commit" ]]; then
+  printf 'Release tag %s does not match the artifact source commit.\n' "$tag" >&2
+  exit 1
+fi
+if [[ "$(gh release view "$tag" --repo "$repo" --json isDraft --jq .isDraft)" != false ]]; then
+  printf 'Recovery requires a published GitHub release.\n' >&2
+  exit 1
+fi
+
+artifacts="$(mktemp -d "${TMPDIR:-/tmp}/wtherdr-release.XXXXXX")"
+trap 'rm -rf "$artifacts"' EXIT
+assets=()
+for target in x86_64-unknown-linux-gnu aarch64-unknown-linux-gnu aarch64-apple-darwin x86_64-apple-darwin; do
+  gh run download "$run" --repo "$repo" --name "wtherdr-$target" --dir "$artifacts"
+  archive="wtherdr-$target-$tag.tgz"
+  read -r expected filename <"$artifacts/$archive.sha256"
+  actual="$(shasum -a 256 "$artifacts/$archive")"
+  if [[ "$filename" != "$archive" || ! "$expected" =~ ^[a-f0-9]{64}$ || "${actual%% *}" != "$expected" ]]; then
+    printf 'Checksum verification failed for %s.\n' "$archive" >&2
+    exit 1
+  fi
+  assets+=("$artifacts/$archive" "$artifacts/$archive.sha256")
+done
+gh release upload "$tag" --repo "$repo" "${assets[@]}"

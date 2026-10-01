@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+#MISE description="Fail when Cargo.lock or herdr-plugin.toml disagree with Cargo.toml"
+#MISE quiet=true
+
+set -euo pipefail
+cd "${MISE_PROJECT_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
+
+declared="$(mise-tasks/version/read)"
+locked="$(mise-tasks/version/lock)"
+manifest="$(mise-tasks/version/manifest)"
+drift=0
+if [[ "$locked" != "$declared" ]]; then
+	printf 'Cargo.lock is out of sync; run mise run version:sync.\n' >&2
+	drift=1
+fi
+if [[ "$manifest" != "$declared" ]]; then
+	printf 'herdr-plugin.toml is out of sync; run mise run version:sync.\n' >&2
+	drift=1
+fi
+exit "$drift"

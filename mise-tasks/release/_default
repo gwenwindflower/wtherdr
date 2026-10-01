@@ -6,10 +6,10 @@ set -euo pipefail
 cd "${MISE_PROJECT_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
 
 TAG="${usage_tag:-${1:-}}"
+mise-tasks/release/preflight ${TAG:+"$TAG"}
 [[ -n "$TAG" ]] || TAG="$(mise-tasks/version/next)"
 export TAG
 
-mise run release:preflight
 mise run version:bump
 mise run release:check
 mise run release:commit

@@ -92,7 +92,7 @@ run = "cargo test --all-features --locked"
 description = "Validate the plugin manifest"
 run = "./tests/plugin-manifest.sh"
 deny_net = true
-allow_write = ["~/.cache/zizmor"]
+deny_write = true
 
 [tasks."test:installer"]
 description = "Exercise the plugin's install script"
@@ -111,13 +111,13 @@ depends = ["test:*"]
 description = "Verify automated gates run noninteractive checks without installing wtherdr"
 run = "./tests/task-workflows.sh"
 
-[tasks."test:labels"]
-description = "Verify repository labels reconcile against the declared list"
-run = "bash tests/repo-labels.sh"
+[tasks."test:publishing"]
+description = "Test crate publication guards with fake Git and GitHub responses"
+run = "bash tests/publishing.sh"
 
-[tasks."test:rulesets"]
-description = "Verify branch rules require CI checks without release-only jobs"
-run = "bash tests/repo-rulesets.sh"
+[tasks."test:packaging"]
+description = "Verify release archives contain the binary and a matching checksum"
+run = "bash tests/packaging.sh"
 
 [tasks."test:build"]
 description = "Verify the optimized binary builds"
@@ -167,6 +167,11 @@ alias = "ca"
 depends = ["ci-audit:zizmor", "ci-audit:pinact"]
 
 # Release
+
+[tasks."release:bootstrap-crate"]
+description = "Publish the first released crate using local Cargo credentials"
+confirm = "Publish this release to crates.io using your local Cargo credentials?"
+run = ["mise run release:crate-preflight", "cargo publish --locked"]
 
 [tasks."release:check"]
 description = "The full pre-release gate: every check plus both workflow audits"

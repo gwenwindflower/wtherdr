@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+#MISE description="Verify crate source and uploaded release assets before publishing"
+set -euo pipefail
+cd "${MISE_PROJECT_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
+
+version="$(mise-tasks/version/read)"
+tag="v$version"
+mise-tasks/version/check "$tag"
+if [[ -n "$(git status --porcelain)" ]]; then
+  printf 'Crate publication requires a clean checkout.\n' >&2
+  exit 1
+fi
+if [[ "$(git rev-parse HEAD)" != "$(git rev-parse "$tag^{commit}")" ]]; then
+  printf 'HEAD does not match %s; check out the release tag before publishing.\n' "$tag" >&2
+  exit 1
+fi
+if ! draft="$(gh release view "$tag" --json isDraft --jq .isDraft)"; then
+  printf 'Cannot read GitHub release %s.\n' "$tag" >&2
+  exit 1
+fi
+if [[ "$draft" != false ]]; then
+  printf 'Crate publication requires a published release.\n' >&2
+  exit 1
+fi
+assets="$(gh release view "$tag" --json assets --jq '.assets[].name')"
+for target in x86_64-unknown-linux-gnu aarch64-unknown-linux-gnu aarch64-apple-darwin x86_64-apple-darwin; do
+  for suffix in tgz tgz.sha256; do
+    asset="wtherdr-$target-$tag.$suffix"
+    if ! printf '%s\n' "$assets" | grep -Fxq "$asset"; then
+      printf 'Missing release asset %s; wait for Release build to finish.\n' "$asset" >&2
+      exit 1
+    fi
+  done
+done
+printf 'Source and binary assets match %s.\n' "$tag"

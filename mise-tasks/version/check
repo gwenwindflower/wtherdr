@@ -1,35 +1,31 @@
 #!/usr/bin/env bash
-#MISE description="Report version drift across Cargo.toml, Cargo.lock, and herdr-plugin.toml"
-#USAGE arg "[tag]" help="Also assert Cargo.toml declares this release, as in v0.0.1"
+#MISE description="Report the declared version and any drift in the files derived from it"
+#USAGE arg "[tag]" help="Also assert the project declares this release, as in v0.0.1"
 
 set -euo pipefail
 cd "${MISE_PROJECT_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
 
 expected="${usage_tag:-${1:-}}"
 
-cargo_version="$(mise-tasks/version/cargo)"
-lock_version="$(mise-tasks/version/lock)"
-manifest_version="$(mise-tasks/version/manifest)"
-drift=0
-
-printf 'Cargo.toml         %s\n' "${cargo_version:-none}"
-printf 'Cargo.lock         %s\n' "${lock_version:-none}"
-printf 'herdr-plugin.toml  %s\n' "${manifest_version:-none}"
-
-if [[ -z "$cargo_version" ]]; then
-	printf 'Cargo.toml declares no package version.\n' >&2
+if [[ ! -x mise-tasks/version/read ]]; then
+	printf 'version:read is missing; restore the Rust version task before checking releases.\n' >&2
 	exit 1
 fi
-if [[ "$lock_version" != "$cargo_version" ]]; then
-	printf 'Cargo.lock is out of sync; run mise run version:sync.\n' >&2
+version="$(mise-tasks/version/read)"
+
+if [[ -z "$version" ]]; then
+	printf 'version:read printed nothing; the project declares no version.\n' >&2
+	exit 1
+fi
+printf 'version  %s\n' "$version"
+
+drift=0
+if [[ -x mise-tasks/version/verify ]] && ! mise-tasks/version/verify; then
+	printf 'Derived version files are out of sync; run mise run version:sync.\n' >&2
 	drift=1
 fi
-if [[ "$manifest_version" != "$cargo_version" ]]; then
-	printf 'herdr-plugin.toml is out of sync; run mise run version:sync.\n' >&2
-	drift=1
-fi
-if [[ -n "$expected" && "${expected#v}" != "$cargo_version" ]]; then
-	printf 'Cargo.toml declares %s; %s expects %s.\n' "$cargo_version" "$expected" "${expected#v}" >&2
+if [[ -n "$expected" && "${expected#v}" != "$version" ]]; then
+	printf 'Cargo.toml declares %s; %s expects %s.\n' "$version" "$expected" "${expected#v}" >&2
 	drift=1
 fi
 

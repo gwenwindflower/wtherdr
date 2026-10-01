@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+#MISE description="Build the binary and package it as <name>-<target>-v<version>.tgz with a checksum"
+#USAGE arg "<target>" help="Target triple the binary was built for, as in aarch64-apple-darwin"
+
+set -euo pipefail
+cd "${MISE_PROJECT_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
+
+target="${usage_target:-${1:?target triple required}}"
+name="wtherdr"
+binary="wtherdr"
+version="$(mise-tasks/version/read)"
+package="${name}-${target}-v${version}"
+
+mise run build
+[[ -x "target/release/${binary}" ]] || {
+	printf 'mise run build must leave the binary at target/release/%s\n' "$binary" >&2
+	exit 1
+}
+
+mkdir -p "dist/${package}"
+cp "target/release/${binary}" "dist/${package}/${binary}"
+tar -C dist -czf "dist/${package}.tgz" "${package}"
+(cd dist && shasum -a 256 "${package}.tgz" >"${package}.tgz.sha256")
+rm -r "dist/${package}"
+printf 'dist/%s.tgz\n' "$package"

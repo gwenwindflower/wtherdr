@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-#MISE description="Set Cargo.toml to a release version, then sync the other two files to it"
+#MISE description="Set the declared version to a release tag and sync the files derived from it"
 #USAGE arg "[tag]" help="Release tag to bump to; defaults to version:next" env="TAG"
 
 set -euo pipefail
@@ -7,23 +7,6 @@ cd "${MISE_PROJECT_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
 
 tag="${usage_tag:-${1:-}}"
 [[ -n "$tag" ]] || tag="$(mise-tasks/version/next)"
-version="${tag#v}"
 
-if ! awk -v version="$version" '
-  $0 == "[package]" { package = 1 }
-  package && $0 != "[package]" && /^\[/ { package = 0 }
-  package && !bumped && /^[[:space:]]*version[[:space:]]*=/ {
-    print "version = \"" version "\""
-    bumped = 1
-    next
-  }
-  { print }
-  END { if (!bumped) exit 1 }
-' Cargo.toml >Cargo.toml.next; then
-	rm -f Cargo.toml.next
-	printf 'Cargo.toml declares no package version to bump.\n' >&2
-	exit 1
-fi
-mv Cargo.toml.next Cargo.toml
-
-mise-tasks/version/sync
+mise-tasks/version/write "${tag#v}"
+mise-tasks/version/check "$tag"

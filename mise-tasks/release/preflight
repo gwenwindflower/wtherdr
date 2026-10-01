@@ -11,7 +11,7 @@ problem() {
 	problems=1
 }
 
-for tool in git cargo git-cliff gh zizmor pinact; do
+for tool in git git-cliff gh zizmor pinact; do
 	if ! command -v "$tool" >/dev/null 2>&1; then
 		problem "required command is unavailable: $tool"
 	fi
@@ -19,8 +19,25 @@ done
 if ! gh auth status >/dev/null 2>&1; then
 	problem 'the GitHub CLI is not authenticated'
 fi
+if ! git remote get-url origin >/dev/null 2>&1; then
+	problem 'no origin remote; create the GitHub repository and add it first'
+fi
 if [[ "$problems" -ne 0 ]]; then
-	printf 'Preflight failed: run mise install, then authenticate gh.\n' >&2
+	printf 'Preflight failed: run mise install, authenticate gh, and add origin.\n' >&2
+	exit 1
+fi
+
+# git-cliff reads GitHub metadata for the repo cliff.toml names, so prove it exists before deriving a tag.
+cliff_owner="$(awk -F'"' '/^owner *=/ { print $2 }' cliff.toml)"
+cliff_repo="$(awk -F'"' '/^repo *=/ { print $2 }' cliff.toml)"
+remote_repo="$(gh repo view --json nameWithOwner --jq .nameWithOwner 2>/dev/null || true)"
+if [[ -z "$remote_repo" ]]; then
+	problem 'origin does not resolve to a GitHub repository gh can see'
+elif [[ "$remote_repo" != "$cliff_owner/$cliff_repo" ]]; then
+	problem "cliff.toml names $cliff_owner/$cliff_repo but origin is $remote_repo"
+fi
+if [[ "$problems" -ne 0 ]]; then
+	printf 'Preflight failed: create the GitHub repository and make cliff.toml name it.\n' >&2
 	exit 1
 fi
 

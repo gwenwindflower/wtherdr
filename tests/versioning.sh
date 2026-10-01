@@ -24,7 +24,7 @@ cat >"$fakebin/cargo" <<'FAKE'
 #!/usr/bin/env bash
 set -euo pipefail
 
-if [[ "${1:-}" != update || "${2:-}" != --workspace ]]; then
+if [[ "$*" != 'update --workspace --offline' ]]; then
   printf 'unexpected cargo command: %s\n' "$*" >&2
   exit 1
 fi
@@ -114,6 +114,9 @@ read_version() {
 }
 
 synced_root="$(make_repo synced 1.2.3 1.2.3 1.2.3)"
+[[ "$(read_version "$synced_root" version/read)" == 1.2.3 ]] || fail 'version/read misread Cargo.toml'
+run_task "$synced_root" version/verify >/dev/null || fail 'version/verify rejected synchronized files'
+[[ "$(read_version "$synced_root" version/files | tr '\n' ' ')" == 'Cargo.toml Cargo.lock herdr-plugin.toml ' ]] || fail 'version/files must list all three version files'
 [[ "$(read_version "$synced_root" version/cargo)" == 1.2.3 ]] || fail 'version/cargo misread Cargo.toml'
 [[ "$(read_version "$synced_root" version/lock)" == 1.2.3 ]] || fail 'version/lock misread Cargo.lock'
 [[ "$(read_version "$synced_root" version/manifest)" == 1.2.3 ]] || fail 'version/manifest misread herdr-plugin.toml'

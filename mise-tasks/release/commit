@@ -8,17 +8,26 @@ cd "${MISE_PROJECT_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
 tag="${usage_tag:-${1:-}}"
 [[ -n "$tag" ]] || tag="$(mise-tasks/version/next)"
 
+version_files=()
+while IFS= read -r file; do
+	[[ -n "$file" ]] && version_files+=("$file")
+done < <(mise-tasks/version/files)
+if [[ "${#version_files[@]}" -eq 0 ]]; then
+	printf 'version:files printed nothing; the language kit must list the files it writes.\n' >&2
+	exit 1
+fi
+
 pending="$(git status --porcelain)"
-version_files="$(git status --porcelain -- Cargo.toml Cargo.lock herdr-plugin.toml)"
+allowed="$(git status --porcelain -- "${version_files[@]}")"
 
 if [[ -z "$pending" ]]; then
 	printf 'Version files already match %s; no release commit needed.\n' "$tag"
 	exit 0
 fi
-if [[ "$pending" != "$version_files" ]]; then
+if [[ "$pending" != "$allowed" ]]; then
 	printf 'Only version files may change during a release:\n%s\n' "$pending" >&2
 	exit 1
 fi
 
-git add -- Cargo.toml Cargo.lock herdr-plugin.toml
+git add -- "${version_files[@]}"
 git commit -m "chore(release): prepare $tag"

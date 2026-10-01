@@ -6,6 +6,8 @@ docs/architecture.md — process lifecycle, module boundaries, environment contr
 docs/popups.md — popup entrypoints, dialog chrome and keys, Herdr's popup constraints
 docs/repository.md — GitHub settings, labels, rulesets, and community setup
 
+SPEC.md and specs/ hold requirements; TODO.md holds active Phases and DONE.md records shipped work.
+
 ## Structure
 
 | Path | Purpose |
@@ -34,6 +36,9 @@ docs/repository.md — GitHub settings, labels, rulesets, and community setup
 - Commit hooks live in `prek.toml`; `mise run hooks:install` installs them. Worktrunk runs `release:check` before merging into its default branch and `check` for other targets.
 - Shell tasks and tests use Bash and standard Unix utilities; developer search tools are not runtime prerequisites.
 - Cargo.toml owns the version. Use `version:sync` to repair Cargo.lock and herdr-plugin.toml; reserve `version:bump` for releases.
+- version:read, write, files, and verify are the Rust kit interface; version:cargo is an alias for version:read.
+- Shared task regressions live in _tool/template/tests; retain local Cargo, packaging, installer, and task-selection tests.
+- Never run release:bootstrap-crate or release:publish-crate as a check. CRATES_IO_PUBLISHING enables OIDC only after the first publication and trusted publisher setup.
 - Release rehearsal is `mise run release:rehearse`. Pushes and publication belong to an explicitly requested release, with the task confirmation gates intact.
 - Try UI changes for real with `cargo install --path . --locked --force`, then `herdr plugin link .` after manifest edits.
 - Agent sandboxes block `HERDR_SOCKET_PATH`, so every `herdr` command that reaches the server fails with `PermissionDenied`. Ask the user to run those.

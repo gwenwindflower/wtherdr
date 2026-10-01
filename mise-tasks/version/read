@@ -5,4 +5,8 @@
 set -euo pipefail
 cd "${MISE_PROJECT_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
 
-exec mise-tasks/version/read
+awk '
+  $0 == "[package]" { package = 1; next }
+  package && /^\[/ { exit }
+  package && /^[[:space:]]*version[[:space:]]*=/ { sub(/^[^"]*"/, ""); sub(/".*$/, ""); print; exit }
+' Cargo.toml

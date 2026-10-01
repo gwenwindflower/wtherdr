@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+#MISE description="Publish the release crate using GitHub Actions OIDC credentials"
+set -euo pipefail
+cd "${MISE_PROJECT_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
+
+if [[ "${GITHUB_ACTIONS:-}" != true || "${GITHUB_EVENT_NAME:-}" != release || -z "${CARGO_REGISTRY_TOKEN:-}" ]]; then
+  printf 'This task requires a GitHub release job with OIDC credentials. For the first publication, use mise run release:bootstrap-crate.\n' >&2
+  exit 1
+fi
+mise-tasks/release/crate-preflight
+cargo publish --locked
