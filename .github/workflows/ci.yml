@@ -18,6 +18,7 @@ env:
 jobs:
   check:
     name: Check
+    needs: audit
     runs-on: ubuntu-24.04
     steps:
       - name: Check out repository
@@ -53,3 +54,25 @@ jobs:
 
       - name: Run tests
         run: mise run 'test:*'
+
+  audit:
+    name: Audit workflows
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install toolchain
+        uses: jdx/mise-action@3c2e0cf82a5b2e5249f0d3635a4d83d0ae861518 # v4.2.5
+
+      - name: Audit with zizmor
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: zizmor --format github .
+
+      - name: Verify action pins
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: mise run ci-audit:pinact
