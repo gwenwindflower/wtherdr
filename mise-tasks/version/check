@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #MISE description="Report version drift across Cargo.toml, Cargo.lock, and herdr-plugin.toml"
-#USAGE arg "[tag]" help="Also assert Cargo.toml declares this release, as in v0.1.0"
+#USAGE arg "[tag]" help="Also assert Cargo.toml declares this release, as in v0.0.1"
 
 set -euo pipefail
 cd "${MISE_PROJECT_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"

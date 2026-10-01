@@ -11,7 +11,7 @@ make_case() {
 	local root="$sandbox/$name"
 	mkdir -p "$root/scripts" "$root/fakebin"
 	cp "$repo_root/scripts/install-binary.sh" "$root/scripts/install-binary.sh"
-	printf '%s\n' '[package]' 'name = "wtherdr"' 'version = "0.1.0"' >"$root/Cargo.toml"
+	printf '%s\n' '[package]' 'name = "wtherdr"' 'version = "0.0.1"' >"$root/Cargo.toml"
 	: >"$root/install.log"
 	printf '0\n' >"$root/binstall-exit"
 	printf 'current\n' >"$root/install-result"
@@ -36,7 +36,7 @@ set -euo pipefail
 
 case "$1" in
   pkgid)
-    printf '%s\n' 'path+file:///tmp/wtherdr#wtherdr@0.1.0'
+    printf '%s\n' 'path+file:///tmp/wtherdr#wtherdr@0.0.1'
     ;;
   install)
     printf '%s\n' "$*" >>"$TEST_LOG"
@@ -44,14 +44,14 @@ case "$1" in
       current)
         cat >"$TEST_BIN/wtherdr" <<'BINARY'
 #!/bin/sh
-printf '%s\n' 'wtherdr 0.1.0'
+printf '%s\n' 'wtherdr 0.0.1'
 BINARY
         chmod +x "$TEST_BIN/wtherdr"
         ;;
       stale)
         cat >"$TEST_BIN/wtherdr" <<'BINARY'
 #!/bin/sh
-printf '%s\n' 'wtherdr 0.0.1'
+printf '%s\n' 'wtherdr 0.0.0'
 BINARY
         chmod +x "$TEST_BIN/wtherdr"
         ;;
@@ -83,7 +83,7 @@ if [[ "$TEST_BINSTALL_EXIT" != 0 ]]; then
 fi
 cat >"$TEST_BIN/wtherdr" <<'BINARY'
 #!/bin/sh
-printf '%s\n' 'wtherdr 0.1.0'
+printf '%s\n' 'wtherdr 0.0.1'
 BINARY
 chmod +x "$TEST_BIN/wtherdr"
 SCRIPT
@@ -106,7 +106,7 @@ run_installer() {
 
 current_root="$(make_case current)"
 write_cargo "$current_root"
-write_wtherdr "$current_root/fakebin/wtherdr" 0.1.0
+write_wtherdr "$current_root/fakebin/wtherdr" 0.0.1
 write_binstall "$current_root"
 run_installer "$current_root"
 [[ ! -s "$current_root/install.log" ]]
@@ -116,7 +116,7 @@ write_cargo "$install_root"
 write_binstall "$install_root"
 run_installer "$install_root"
 [[ "$(<"$install_root/install.log")" == 'wtherdr --manifest-path Cargo.toml --strategies crate-meta-data --locked --force --no-confirm' ]]
-[[ "$("$install_root/fakebin/wtherdr" --version)" == 'wtherdr 0.1.0' ]]
+[[ "$("$install_root/fakebin/wtherdr" --version)" == 'wtherdr 0.0.1' ]]
 [[ ! -e "$install_root/target/release/wtherdr" ]]
 
 source_root="$(make_case source)"
@@ -155,6 +155,6 @@ if run_installer "$stale_result_root" >"$stale_result_root/output.log" 2>&1; the
 	printf 'Installer accepted a stale installed binary.\n' >&2
 	exit 1
 fi
-grep -Fq 'reported wtherdr 0.0.1; expected wtherdr 0.1.0' "$stale_result_root/output.log"
+grep -Fq 'reported wtherdr 0.0.0; expected wtherdr 0.0.1' "$stale_result_root/output.log"
 
 printf 'Binary installer tests passed.\n'
