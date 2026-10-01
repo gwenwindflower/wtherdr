@@ -1,6 +1,6 @@
 id = "wtherdr"
 name = "wtherdr"
-version = "0.0.1"
+version = "0.0.2"
 min_herdr_version = "0.7.5"
 description = "Run Worktrunk's native worktree workflows in Herdr popups and keep nested workspaces in sync."
 platforms = ["linux", "macos"]
