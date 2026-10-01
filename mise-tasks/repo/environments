@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+#MISE description="Set up trusted publishing environments for crates.io, limited to v* release tags"
+
+set -euo pipefail
+cd "${MISE_PROJECT_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
+
+repo="$(gh repo view --json nameWithOwner --jq .nameWithOwner)"
+environment=release
+tag_pattern='v*'
+
+jq -n '{
+	can_admins_bypass: true,
+	deployment_branch_policy: {protected_branches: false, custom_branch_policies: true}
+}' | gh api --method PUT "repos/$repo/environments/$environment" --input - >/dev/null
+
+policies="repos/$repo/environments/$environment/deployment-branch-policies"
+existing="$(gh api --paginate "$policies" --jq '.branch_policies[]' | jq -s '.')"
+matching="$(jq --arg pattern "$tag_pattern" '[.[] | select(.type == "tag" and .name == $pattern)] | length' <<<"$existing")"
+if [[ "$matching" == 0 ]]; then
+	gh api --method POST "$policies" -f name="$tag_pattern" -f type=tag >/dev/null
+fi
+
+obsolete="$(jq -r --arg pattern "$tag_pattern" '.[] | select(.type != "tag" or .name != $pattern) | .id' <<<"$existing")"
+while IFS= read -r id; do
+	[[ -n "$id" ]] || continue
+	gh api --method DELETE "$policies/$id" >/dev/null
+done <<<"$obsolete"
+
+printf 'Environment %s on %s deploys only from tags matching %s.\n' "$environment" "$repo" "$tag_pattern"
+printf 'Set the environment to %s in the crates.io trusted publisher config (workflow: release-build.yml).\n' "$environment"
