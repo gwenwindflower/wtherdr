@@ -32,5 +32,6 @@ pub enum SwitchMode {
     Create {
         branch: String,
         base: Option<String>,
+        focus: bool,
     },
 }

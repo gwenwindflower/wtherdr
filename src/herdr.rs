@@ -186,11 +186,11 @@ impl Herdr for Api {
         repository_context(&result, source)
     }
 
-    fn open_worktree(&self, parent: &str, checkout: &Checkout) -> Result<()> {
+    fn open_worktree(&self, parent: &str, checkout: &Checkout, focus: bool) -> Result<()> {
         let mut params = json!({
             "workspace_id": parent,
             "path": absolute(&checkout.path)?,
-            "focus": true,
+            "focus": focus,
         });
         if let Some(branch) = &checkout.branch {
             params["label"] = Value::String(branch.clone());

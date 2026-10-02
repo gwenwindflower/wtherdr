@@ -10,6 +10,7 @@ pub enum Key {
     Escape,
     Backspace,
     Clear,
+    Tab,
     Char(char),
     Other,
 }
@@ -17,6 +18,7 @@ pub enum Key {
 pub fn key_from_byte(byte: u8) -> Option<Key> {
     match byte {
         b'\r' | b'\n' => Some(Key::Enter),
+        b'\t' => Some(Key::Tab),
         0x03 | 0x15 => Some(Key::Clear),
         0x08 | 0x7f => Some(Key::Backspace),
         0x1b => None,
@@ -195,6 +197,7 @@ mod tests {
 
     #[test]
     fn control_bytes_map_to_dialog_keys() {
+        assert_eq!(key_from_byte(b'\t'), Some(Key::Tab));
         assert_eq!(key_from_byte(b'\r'), Some(Key::Enter));
         assert_eq!(key_from_byte(0x03), Some(Key::Clear));
         assert_eq!(key_from_byte(0x7f), Some(Key::Backspace));

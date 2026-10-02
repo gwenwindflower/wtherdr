@@ -66,15 +66,56 @@ fn hint_row(hints: &[Hint], width: u16) -> String {
     format!("{}{}", " ".repeat(indent), rendered.join("    "))
 }
 
-pub fn input(context: &str, action: &str) -> Result<Option<String>> {
-    if !stdin().is_terminal() {
-        return read_plain_line(action);
+#[derive(Default)]
+pub struct CreateInput {
+    pub branch: String,
+    pub focus: bool,
+}
+
+#[derive(Debug, Eq, PartialEq)]
+enum InputResult {
+    Editing,
+    Submitted,
+    Cancelled,
+}
+
+impl CreateInput {
+    fn edit(&mut self, key: Key) -> InputResult {
+        match key {
+            Key::Enter if !self.branch.trim().is_empty() => {
+                self.branch = self.branch.trim().to_owned();
+                return InputResult::Submitted;
+            }
+            Key::Escape => return InputResult::Cancelled,
+            Key::Clear => self.branch.clear(),
+            Key::Tab => self.focus = !self.focus,
+            Key::Backspace => {
+                self.branch.pop();
+            }
+            Key::Char(character) => self.branch.push(character),
+            Key::Enter | Key::Other => {}
+        }
+        InputResult::Editing
     }
-    let hints = [
+}
+
+pub fn create(context: &str) -> Result<Option<CreateInput>> {
+    if !stdin().is_terminal() {
+        return Ok(read_plain_line("create")?.map(|branch| CreateInput {
+            branch,
+            focus: false,
+        }));
+    }
+    let mut hints = [
         Hint {
             key: "↵",
-            label: action,
+            label: "create",
             primary: true,
+        },
+        Hint {
+            key: "tab",
+            label: "[ ] focus",
+            primary: false,
         },
         Hint {
             key: "^c",
@@ -88,26 +129,24 @@ pub fn input(context: &str, action: &str) -> Result<Option<String>> {
         },
     ];
 
-    let mut value = String::new();
+    let mut input = CreateInput::default();
     let session = DialogScreen::open()?;
     loop {
+        hints[1].label = if input.focus {
+            "[x] focus"
+        } else {
+            "[ ] focus"
+        };
         session.draw(&Dialog {
             context,
-            value: &value,
+            value: &input.branch,
             editing: true,
             hints: &hints,
         })?;
-        match read_key()? {
-            Key::Enter if !value.trim().is_empty() => {
-                return Ok(Some(value.trim().to_owned()));
-            }
-            Key::Escape => return Ok(None),
-            Key::Clear => value.clear(),
-            Key::Backspace => {
-                value.pop();
-            }
-            Key::Char(character) => value.push(character),
-            Key::Enter | Key::Other => {}
+        match input.edit(read_key()?) {
+            InputResult::Submitted => return Ok(Some(input)),
+            InputResult::Cancelled => return Ok(None),
+            InputResult::Editing => {}
         }
     }
 }
@@ -207,6 +246,31 @@ impl Drop for DialogScreen {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn create_keeps_focus_unless_tab_enables_it() {
+        let mut input = CreateInput::default();
+        for key in [Key::Char('a'), Key::Char('b'), Key::Backspace] {
+            assert_eq!(input.edit(key), InputResult::Editing);
+        }
+        assert!(!input.focus);
+        assert_eq!(input.edit(Key::Tab), InputResult::Editing);
+        assert!(input.focus);
+        assert_eq!(input.branch, "a");
+        assert_eq!(input.edit(Key::Enter), InputResult::Submitted);
+        assert_eq!(input.edit(Key::Tab), InputResult::Editing);
+        assert!(!input.focus);
+        assert_eq!(input.edit(Key::Escape), InputResult::Cancelled);
+    }
+
+    #[test]
+    fn create_cannot_submit_an_empty_branch() {
+        let mut input = CreateInput::default();
+        assert_eq!(input.edit(Key::Enter), InputResult::Editing);
+        input.edit(Key::Char('a'));
+        input.edit(Key::Clear);
+        assert_eq!(input.edit(Key::Enter), InputResult::Editing);
+    }
 
     fn plain(text: &str) -> String {
         let mut out = String::new();

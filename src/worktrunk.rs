@@ -100,7 +100,7 @@ impl CommandRunner {
         ];
         match mode {
             SwitchMode::Pick => {}
-            SwitchMode::Create { branch, base } => {
+            SwitchMode::Create { branch, base, .. } => {
                 args.push(OsString::from("--create"));
                 args.push(OsString::from(branch));
                 if let Some(base) = base {
@@ -277,6 +277,7 @@ mod tests {
             &SwitchMode::Create {
                 branch: "feature/api".into(),
                 base: Some("@".into()),
+                focus: false,
             },
         );
 

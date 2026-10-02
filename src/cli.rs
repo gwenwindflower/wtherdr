@@ -36,6 +36,9 @@ pub enum Command {
         /// Base branch or Worktrunk shortcut such as @, ^, or pr:123
         #[arg(long)]
         base: Option<String>,
+        /// Focus the created workspace (defaults to keeping the source focused)
+        #[arg(long, num_args = 0..=1, default_missing_value = "true")]
+        focus: Option<bool>,
     },
     /// Open a workflow's run popup as soon as its dialog popup closes
     #[command(hide = true)]
@@ -111,6 +114,37 @@ mod tests {
                 assert_eq!(base.as_deref(), Some("@"));
             }
             _ => panic!("expected run command"),
+        }
+    }
+
+    #[test]
+    fn create_focus_is_opt_in() {
+        for (args, expected) in [
+            (
+                vec!["wtherdr", "run", "create", "--branch", "feature"],
+                None,
+            ),
+            (
+                vec!["wtherdr", "run", "create", "--branch", "feature", "--focus"],
+                Some(true),
+            ),
+            (
+                vec![
+                    "wtherdr",
+                    "run",
+                    "create",
+                    "--branch",
+                    "feature",
+                    "--focus=false",
+                ],
+                Some(false),
+            ),
+        ] {
+            let cli = Cli::try_parse_from(args).unwrap();
+            let Command::Run { focus, .. } = cli.command else {
+                panic!("expected run command");
+            };
+            assert_eq!(focus, expected);
         }
     }
 

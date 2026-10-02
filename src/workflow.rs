@@ -6,7 +6,12 @@ use crate::model::{Checkout, MergeOutcome, RepositoryContext, SourceWorkspace, S
 
 pub trait Herdr {
     fn repository_context(&self, source: &SourceWorkspace) -> Result<RepositoryContext>;
-    fn open_worktree(&self, parent_workspace_id: &str, checkout: &Checkout) -> Result<()>;
+    fn open_worktree(
+        &self,
+        parent_workspace_id: &str,
+        checkout: &Checkout,
+        focus: bool,
+    ) -> Result<()>;
     fn focus_workspace(&self, workspace_id: &str) -> Result<()>;
     fn close_workspace(&self, workspace_id: &str) -> Result<()>;
 }
@@ -56,8 +61,12 @@ where
                 .focus_workspace(&repository.parent_workspace_id)
                 .context("Worktrunk switched successfully, but Herdr could not focus the parent workspace")
         } else {
+            let focus = match mode {
+                SwitchMode::Pick => true,
+                SwitchMode::Create { focus, .. } => *focus,
+            };
             self.herdr
-                .open_worktree(&repository.parent_workspace_id, &checkout)
+                .open_worktree(&repository.parent_workspace_id, &checkout, focus)
                 .with_context(|| {
                     format!(
                         "Worktrunk switched to {}, but Herdr could not open it as a nested workspace",
@@ -156,9 +165,9 @@ mod tests {
                 .ok_or_else(|| anyhow!("missing context"))
         }
 
-        fn open_worktree(&self, parent: &str, checkout: &Checkout) -> Result<()> {
+        fn open_worktree(&self, parent: &str, checkout: &Checkout, focus: bool) -> Result<()> {
             self.calls.borrow_mut().push(format!(
-                "open:{parent}:{}:{}",
+                "open:{parent}:{}:{}:{focus}",
                 checkout.branch.as_deref().unwrap_or("detached"),
                 checkout.path.display()
             ));
@@ -268,8 +277,36 @@ mod tests {
 
         assert_eq!(
             engine.herdr.calls.into_inner(),
-            ["open:w1:feature:/repo.feature"]
+            ["open:w1:feature:/repo.feature:true"]
         );
+    }
+
+    #[test]
+    fn create_opens_workspace_with_the_requested_focus() {
+        for focus in [false, true] {
+            let engine = engine(
+                Checkout {
+                    branch: Some("feature".into()),
+                    path: PathBuf::from("/repo.feature"),
+                },
+                false,
+                false,
+            );
+            engine
+                .switch(
+                    &source(),
+                    &SwitchMode::Create {
+                        branch: "feature".into(),
+                        base: None,
+                        focus,
+                    },
+                )
+                .unwrap();
+            assert_eq!(
+                engine.herdr.calls.into_inner(),
+                [format!("open:w1:feature:/repo.feature:{focus}")]
+            );
+        }
     }
 
     #[test]

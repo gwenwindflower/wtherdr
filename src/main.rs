@@ -43,7 +43,8 @@ fn run(cli: Cli) -> Result<()> {
             workflow,
             branch,
             base,
-        } => execute(workflow, branch, base),
+            focus,
+        } => execute(workflow, branch, base, focus),
         Command::Handoff { workflow } => {
             let source = workflow_source()?;
             Api::from_env().open_popup_when_free(
@@ -64,10 +65,13 @@ fn prompt(workflow: PopupWorkflow) -> Result<()> {
     let repository = Api::from_env().repository_context(&source)?;
     let input = match workflow {
         PopupWorkflow::Create => {
-            let Some(branch) = dialog::input(&repository.repo_name, "create")? else {
+            let Some(input) = dialog::create(&repository.repo_name)? else {
                 return Ok(());
             };
-            vec![("WTHERDR_BRANCH", branch)]
+            vec![
+                ("WTHERDR_BRANCH", input.branch),
+                ("WTHERDR_FOCUS", input.focus.to_string()),
+            ]
         }
         PopupWorkflow::Merge | PopupWorkflow::Remove => {
             require_linked_worktree(&repository, workflow.id())?;
@@ -103,7 +107,12 @@ fn hand_off(workflow: PopupWorkflow, input: &[(&str, String)]) -> Result<()> {
     Ok(())
 }
 
-fn execute(workflow: PopupWorkflow, branch: Option<String>, base: Option<String>) -> Result<()> {
+fn execute(
+    workflow: PopupWorkflow,
+    branch: Option<String>,
+    base: Option<String>,
+    focus: Option<bool>,
+) -> Result<()> {
     let source = workflow_source()?;
     let engine = engine();
     match workflow {
@@ -114,7 +123,24 @@ fn execute(workflow: PopupWorkflow, branch: Option<String>, base: Option<String>
                 .filter(|branch| !branch.is_empty())
                 .context("create needs a branch name")?;
             let base = base.or_else(|| std::env::var("WTHERDR_BASE").ok());
-            engine.switch(&source, &SwitchMode::Create { branch, base })
+            let focus = focus.map_or_else(
+                || {
+                    std::env::var("WTHERDR_FOCUS").map_or(Ok(false), |value| {
+                        value
+                            .parse::<bool>()
+                            .context("WTHERDR_FOCUS must be true or false")
+                    })
+                },
+                Ok,
+            )?;
+            engine.switch(
+                &source,
+                &SwitchMode::Create {
+                    branch,
+                    base,
+                    focus,
+                },
+            )
         }
         PopupWorkflow::Switch => engine.switch(&source, &SwitchMode::Pick),
         PopupWorkflow::Merge => engine.merge(&source),
@@ -123,7 +149,7 @@ fn execute(workflow: PopupWorkflow, branch: Option<String>, base: Option<String>
 }
 
 fn carried_input() -> Vec<(&'static str, String)> {
-    ["WTHERDR_BRANCH", "WTHERDR_BASE"]
+    ["WTHERDR_BRANCH", "WTHERDR_BASE", "WTHERDR_FOCUS"]
         .into_iter()
         .filter_map(|name| std::env::var(name).ok().map(|value| (name, value)))
         .collect()
