@@ -76,7 +76,7 @@ where
         if outcome.removed {
             self.finish_removal(source, &repository, "merged")
         } else {
-            Ok(())
+            self.focus_parent(&repository, "merged")
         }
     }
 
@@ -104,6 +104,7 @@ where
         repository: &RepositoryContext,
         operation: &str,
     ) -> Result<()> {
+        self.focus_parent(repository, operation)?;
         self.herdr
             .close_workspace(&source.workspace_id)
             .with_context(|| {
@@ -111,12 +112,15 @@ where
                     "Worktrunk {operation} the checkout, but Herdr could not close workspace {}",
                     source.workspace_id
                 )
-            })?;
+            })
+    }
+
+    fn focus_parent(&self, repository: &RepositoryContext, operation: &str) -> Result<()> {
         self.herdr
             .focus_workspace(&repository.parent_workspace_id)
             .with_context(|| {
                 format!(
-                    "the worktree workspace closed, but Herdr could not focus parent workspace {}",
+                    "Worktrunk {operation} the checkout, but Herdr could not focus parent workspace {}",
                     repository.parent_workspace_id
                 )
             })
@@ -305,7 +309,7 @@ mod tests {
     }
 
     #[test]
-    fn merge_closes_linked_workspace_and_focuses_parent() {
+    fn merge_focuses_parent_before_closing_the_popup_owner() {
         let engine = engine(
             Checkout {
                 branch: None,
@@ -317,7 +321,23 @@ mod tests {
 
         engine.merge(&source()).unwrap();
 
-        assert_eq!(engine.herdr.calls.into_inner(), ["close:w2", "focus:w1"]);
+        assert_eq!(engine.herdr.calls.into_inner(), ["focus:w1", "close:w2"]);
+    }
+
+    #[test]
+    fn remove_focuses_parent_before_closing_the_popup_owner() {
+        let engine = engine(
+            Checkout {
+                branch: None,
+                path: PathBuf::new(),
+            },
+            true,
+            false,
+        );
+
+        engine.remove(&source()).unwrap();
+
+        assert_eq!(engine.herdr.calls.into_inner(), ["focus:w1", "close:w2"]);
     }
 
     #[test]
@@ -337,7 +357,7 @@ mod tests {
 
         engine.merge(&source()).unwrap();
 
-        assert!(engine.herdr.calls.into_inner().is_empty());
+        assert_eq!(engine.herdr.calls.into_inner(), ["focus:w1"]);
     }
 
     #[test]

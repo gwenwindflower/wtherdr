@@ -28,7 +28,7 @@ Switch skips steps 2 and 3: Worktrunk owns the picker, so its action opens `swit
 ## Reconciliation rules
 
 - Switching to the repository root focuses the parent workspace. Any other checkout opens as a workspace nested under the parent and labelled with its branch.
-- Merge closes the workspace only when Worktrunk reports that it removed the checkout.
-- Remove closes the workspace, then focuses the parent.
+- Merge focuses the repository parent and closes the child workspace only when Worktrunk reports that it removed the checkout.
+- Remove focuses the repository parent, then closes the child workspace. Closing the popup's owning workspace terminates the popup process, so focus must move first.
 - Merge and remove refuse to run from the repository parent, in the dialog as well as the run popup.
 - A Worktrunk command that succeeds while Herdr reconciliation fails reports both: what Worktrunk did, and what Herdr could not do.
