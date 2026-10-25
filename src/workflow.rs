@@ -342,7 +342,7 @@ mod tests {
 
         engine.switch(&source(), &SwitchMode::Pick).unwrap();
 
-        assert!(engine.herdr.calls.into_inner().is_empty());
+        assert_eq!(engine.herdr.calls.into_inner(), Vec::<String>::new());
     }
 
     #[test]
@@ -409,7 +409,7 @@ mod tests {
         );
 
         assert!(engine.remove(&source()).is_err());
-        assert!(engine.herdr.calls.into_inner().is_empty());
+        assert_eq!(engine.herdr.calls.into_inner(), Vec::<String>::new());
     }
 
     #[test]
@@ -426,6 +426,6 @@ mod tests {
         let error = engine.merge(&source()).unwrap_err();
 
         assert!(error.to_string().contains("nested worktree workspace"));
-        assert!(engine.worktrunk.calls.into_inner().is_empty());
+        assert_eq!(engine.worktrunk.calls.into_inner(), Vec::<String>::new());
     }
 }

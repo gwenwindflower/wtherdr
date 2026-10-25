@@ -319,7 +319,7 @@ mod tests {
         );
         let lines: Vec<String> = plain(&rendered).lines().map(str::to_owned).collect();
 
-        assert!(lines[0].is_empty());
+        assert_eq!(lines[0], "");
         assert_eq!(lines[1], "  wtherdr  feature/api ");
         assert!(lines[2].contains("↵ create"));
     }
