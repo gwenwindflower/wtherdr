@@ -13,6 +13,7 @@ concurrency:
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 env:
+  MISE_ENV: ci
   MISE_TRUSTED_CONFIG_PATHS: ${{ github.workspace }}
   MISE_TASK_OUTPUT: interleave
   MISE_JOBS: "1"

@@ -33,6 +33,7 @@ SPEC.md and specs/ hold requirements; TODO.md holds active Phases and DONE.md re
 
 - Write the failing test first, and keep anything renderable or parseable in a pure function so no test needs a live Herdr session.
 - Use `mise run check` for the full gate. Interactive Cargo tasks live under `dev:`; `test:*` must stay safe for unattended CI and release checks.
+- Keep development tools commented in committed `mise.toml`; active declarations are for build or run dependencies. CI selects `mise.ci.toml` with `MISE_ENV=ci`; keep its development tools and versions aligned.
 - Commit hooks live in `prek.toml`; `mise run hooks:install` installs them. Worktrunk runs `release:check` before merging into its default branch and `check` for other targets.
 - Shell tasks and tests use Bash and standard Unix utilities; developer search tools are not runtime prerequisites.
 - Cargo.toml owns the version. Use `version:sync` to repair Cargo.lock and herdr-plugin.toml; reserve `version:bump` for releases.

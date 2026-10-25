@@ -18,6 +18,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
+  MISE_ENV: ci
   RELEASE_TAG: ${{ github.event.release.tag_name || inputs.tag }}
   MISE_TRUSTED_CONFIG_PATHS: ${{ github.workspace }}
 

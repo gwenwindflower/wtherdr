@@ -1,0 +1,9 @@
+# CI selects this overlay with MISE_ENV=ci.
+[tools]
+git-cliff = "latest"
+pinact = "latest"
+zizmor = "latest"
+rumdl = "latest"
+shellcheck = "latest"
+prek = "latest"
+jq = "latest"

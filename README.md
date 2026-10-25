@@ -115,7 +115,9 @@ cargo install --git https://github.com/gwenwindflower/wtherdr --locked
 
 ## Local development
 
-Development runs on [mise](https://mise.jdx.dev), which owns the linters, release tooling, and task list. Rust comes from rustup on your `PATH`; `rust-toolchain.toml` selects stable with clippy and rustfmt.
+Development runs on [mise](https://mise.jdx.dev), which owns the task list. Tasks use tools already on your `PATH`. For missing development tools or a project-local version, uncomment their entries under `[tools]` in `mise.toml` before installing. Rust comes from rustup on your `PATH`; `rust-toolchain.toml` selects stable with clippy and rustfmt.
+
+Keep development opt-ins local to the checkout: committed `mise.toml` activates only build or run dependencies. CI selects `mise.ci.toml` with `MISE_ENV=ci` to install its development tools; keep that overlay aligned when changing the tool list or versions. Plugin installs do not opt into the development toolchain.
 
 ```bash
 mise trust

@@ -23,7 +23,7 @@ if ! git remote get-url origin >/dev/null 2>&1; then
 	problem 'no origin remote; create the GitHub repository and add it first'
 fi
 if [[ "$problems" -ne 0 ]]; then
-	printf 'Preflight failed: run mise install, authenticate gh, and add origin.\n' >&2
+	printf 'Preflight failed: install missing commands (opt into development tools in mise.toml before mise install), authenticate gh, and add origin.\n' >&2
 	exit 1
 fi
 

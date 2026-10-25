@@ -1,11 +1,14 @@
 [tools]
-git-cliff = "latest"
-pinact = "latest"
-zizmor = "latest"
-rumdl = "latest"
-shellcheck = "latest"
-prek = "latest"
-jq = "latest"
+# Build or run dependencies are active; development-only tools are opt-in.
+# Uncomment tools missing from your PATH, or needing a project-local version,
+# then run `mise install`. Keep CI's versions in mise.ci.toml aligned.
+# git-cliff = "latest"
+# pinact = "latest"
+# zizmor = "latest"
+# rumdl = "latest"
+# shellcheck = "latest"
+# prek = "latest"
+# jq = "latest"
 
 # Rust
 
