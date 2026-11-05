@@ -41,5 +41,3 @@ SPEC.md and specs/ hold requirements; TODO.md holds active Phases and DONE.md re
 - Shared task regressions live in _tool/template/tests; retain local Cargo, packaging, installer, and task-selection tests.
 - Never run release:bootstrap-crate or release:publish-crate as a check. CRATES_IO_PUBLISHING enables OIDC only after the first publication and trusted publisher setup.
 - Release rehearsal is `mise run release:rehearse`. Pushes and publication belong to an explicitly requested release, with the task confirmation gates intact.
-- Try UI changes for real with `cargo install --path . --locked --force`, then `herdr plugin link .` after manifest edits.
-- Agent sandboxes block `HERDR_SOCKET_PATH`, so every `herdr` command that reaches the server fails with `PermissionDenied`. Ask the user to run those.
