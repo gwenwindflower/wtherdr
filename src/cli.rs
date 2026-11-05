@@ -5,7 +5,7 @@ use clap::{Parser, Subcommand, ValueEnum};
     name = "wtherdr",
     version,
     about = "Worktrunk worktree workflows as native Herdr workspaces",
-    long_about = "wtherdr runs Worktrunk's real switch, create, merge, and remove workflows in \
+    long_about = "wtherdr runs Worktrunk's switch, create, merge, remove, rebase, and hook workflows in \
 Herdr modal popups. Worktrunk owns Git worktrees and lifecycle hooks; Herdr opens the resulting \
 checkouts as nested workspaces and reconciles them after cleanup."
 )]
@@ -45,6 +45,15 @@ pub enum Command {
     Handoff {
         #[arg(value_enum)]
         workflow: PopupWorkflow,
+        #[arg(long)]
+        finish: bool,
+    },
+    /// Present the workflow result and finish workspace cleanup
+    #[command(hide = true)]
+    Finish {
+        /// Read a saved workflow result after a popup handoff failure
+        #[arg(long)]
+        result: Option<std::path::PathBuf>,
     },
     /// Show Herdr and Worktrunk connectivity
     Status,
@@ -56,6 +65,8 @@ pub enum PopupWorkflow {
     Switch,
     Merge,
     Remove,
+    Rebase,
+    Hook,
 }
 
 impl PopupWorkflow {
@@ -65,6 +76,8 @@ impl PopupWorkflow {
             Self::Switch => "switch",
             Self::Merge => "merge",
             Self::Remove => "remove",
+            Self::Rebase => "rebase",
+            Self::Hook => "hook",
         }
     }
 
@@ -81,6 +94,8 @@ impl PopupWorkflow {
             Self::Switch => "switch-run",
             Self::Merge => "merge-run",
             Self::Remove => "remove-run",
+            Self::Rebase => "rebase-run",
+            Self::Hook => "hook-run",
         }
     }
 
@@ -162,5 +177,31 @@ mod tests {
         assert_eq!(PopupWorkflow::Switch.dialog_entrypoint(), None);
         assert_eq!(PopupWorkflow::Switch.action_entrypoint(), "switch-run");
         assert_eq!(PopupWorkflow::Merge.action_entrypoint(), "merge");
+    }
+
+    #[test]
+    fn branch_and_hook_actions_open_selection_dialogs() {
+        for (name, workflow) in [
+            ("rebase", PopupWorkflow::Rebase),
+            ("hook", PopupWorkflow::Hook),
+        ] {
+            let cli = Cli::try_parse_from(["wtherdr", "popup", name]).unwrap();
+            assert!(
+                matches!(cli.command, Command::Popup { workflow: parsed } if parsed == workflow)
+            );
+            assert_eq!(workflow.action_entrypoint(), name);
+        }
+    }
+
+    #[test]
+    fn completion_handoff_is_distinct_from_running_the_action() {
+        let cli = Cli::try_parse_from(["wtherdr", "handoff", "remove", "--finish"]).unwrap();
+        assert!(matches!(
+            cli.command,
+            Command::Handoff {
+                workflow: PopupWorkflow::Remove,
+                finish: true
+            }
+        ));
     }
 }

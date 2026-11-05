@@ -2,7 +2,10 @@ use std::path::Path;
 
 use anyhow::{Context, Result, bail};
 
-use crate::model::{Checkout, MergeOutcome, RepositoryContext, SourceWorkspace, SwitchMode};
+use crate::model::{
+    Checkout, MergeOutcome, RepositoryContext, SourceWorkspace, SwitchMode, WorkflowOutcome,
+    WorkspaceCheckout,
+};
 
 pub trait Herdr {
     fn repository_context(&self, source: &SourceWorkspace) -> Result<RepositoryContext>;
@@ -14,12 +17,14 @@ pub trait Herdr {
     ) -> Result<()>;
     fn focus_workspace(&self, workspace_id: &str) -> Result<()>;
     fn close_workspace(&self, workspace_id: &str) -> Result<()>;
+    fn linked_workspaces(&self, source: &SourceWorkspace) -> Result<Vec<WorkspaceCheckout>>;
 }
 
 pub trait Worktrunk {
     fn switch(&self, cwd: &Path, mode: &SwitchMode) -> Result<Option<Checkout>>;
     fn merge(&self, cwd: &Path) -> Result<MergeOutcome>;
     fn remove(&self, cwd: &Path) -> Result<()>;
+    fn worktree_paths(&self, cwd: &Path) -> Result<Vec<std::path::PathBuf>>;
 }
 
 pub fn require_linked_worktree(repository: &RepositoryContext, operation: &str) -> Result<()> {
@@ -46,16 +51,108 @@ where
         Self { herdr, worktrunk }
     }
 
-    pub fn switch(&self, source: &SourceWorkspace, mode: &SwitchMode) -> Result<()> {
+    pub fn switch(&self, source: &SourceWorkspace, mode: &SwitchMode) -> Result<WorkflowOutcome> {
         let repository = self.herdr.repository_context(source)?;
-        let Some(checkout) = self
+        let registered = if matches!(mode, SwitchMode::Pick) {
+            self.herdr.linked_workspaces(source)?
+        } else {
+            Vec::new()
+        };
+        let before = if matches!(mode, SwitchMode::Pick) {
+            self.worktrunk.worktree_paths(&repository.root_path)?
+        } else {
+            Vec::new()
+        };
+        let tracked: Vec<WorkspaceCheckout> = registered
+            .into_iter()
+            .filter_map(|workspace| {
+                before
+                    .iter()
+                    .find(|path| same_path(path, &workspace.path))
+                    .map(|path| WorkspaceCheckout {
+                        workspace_id: workspace.workspace_id,
+                        path: path.clone(),
+                    })
+            })
+            .collect();
+        let selected = self
             .worktrunk
             .switch(&source.cwd, mode)
-            .context("Worktrunk could not switch worktrees")?
-        else {
-            return Ok(());
+            .context("Worktrunk could not switch worktrees");
+        let mut outcome = WorkflowOutcome::completed(&repository, "Worktree switch completed");
+        let mut removed = Vec::new();
+        if matches!(mode, SwitchMode::Pick) {
+            match self.worktrunk.worktree_paths(&repository.root_path)
+                .context("Worktrunk's picker exited, but checkout cleanup could not be verified; Herdr workspaces remain open") {
+                Ok(after) => {
+                    removed = before.into_iter().filter(|path| !after.iter().any(|current| same_path(path, current))).collect();
+                    outcome.close_workspace_ids = tracked.into_iter()
+                        .filter(|workspace| removed.iter().any(|path| same_path(path, &workspace.path)))
+                        .map(|workspace| workspace.workspace_id).collect();
+                }
+                Err(error) => append_failure(&mut outcome, &error),
+            }
+        }
+        let removed_message = format!(
+            "Removed worktrees in the switch picker: {}",
+            removed
+                .iter()
+                .map(|path| path.display().to_string())
+                .collect::<Vec<_>>()
+                .join(", ")
+        );
+        let checkout = match selected {
+            Ok(Some(checkout)) => checkout,
+            Ok(None) => {
+                outcome.cancelled = removed.is_empty() && outcome.error.is_none();
+                outcome.message = if removed.is_empty() {
+                    "Switch picker closed".into()
+                } else {
+                    removed_message
+                };
+                return Ok(outcome);
+            }
+            Err(error) if removed.is_empty() && outcome.error.is_none() => {
+                return Err(error);
+            }
+            Err(error) => {
+                append_failure(&mut outcome, &error);
+                outcome.message = if removed.is_empty() {
+                    "Switch picker failed".into()
+                } else {
+                    removed_message
+                };
+                return Ok(outcome);
+            }
         };
+        outcome.message = format!(
+            "{} {}",
+            if matches!(mode, SwitchMode::Create { .. }) {
+                "Created"
+            } else {
+                "Switched to"
+            },
+            checkout.branch.as_deref().unwrap_or("detached checkout")
+        );
+        if !removed.is_empty() {
+            outcome.message.push('\n');
+            outcome.message.push_str(&removed_message);
+        }
+        if let Err(error) = self.open_checkout(&repository, &checkout, mode) {
+            if removed.is_empty() && outcome.error.is_none() {
+                return Err(error);
+            }
+            append_failure(&mut outcome, &error);
+        }
+        Ok(outcome)
+    }
 
+    fn open_checkout(
+        &self,
+        repository: &RepositoryContext,
+        checkout: &Checkout,
+        mode: &SwitchMode,
+    ) -> Result<()> {
         if same_path(&checkout.path, &repository.root_path) {
             self.herdr
                 .focus_workspace(&repository.parent_workspace_id)
@@ -66,7 +163,7 @@ where
                 SwitchMode::Create { focus, .. } => *focus,
             };
             self.herdr
-                .open_worktree(&repository.parent_workspace_id, &checkout, focus)
+                .open_worktree(&repository.parent_workspace_id, checkout, focus)
                 .with_context(|| {
                     format!(
                         "Worktrunk switched to {}, but Herdr could not open it as a nested workspace",
@@ -76,25 +173,29 @@ where
         }
     }
 
-    pub fn merge(&self, source: &SourceWorkspace) -> Result<()> {
+    pub fn merge(&self, source: &SourceWorkspace) -> Result<WorkflowOutcome> {
         let repository = self.linked_repository(source, "merge")?;
         let outcome = self
             .worktrunk
             .merge(&source.cwd)
             .context("Worktrunk could not merge this worktree")?;
         if outcome.removed {
-            self.finish_removal(source, &repository, "merged")
+            Ok(self.finish_removal(source, &repository, "merged"))
         } else {
-            self.focus_parent(&repository, "merged")
+            self.focus_parent(&repository, "merged")?;
+            Ok(WorkflowOutcome::completed(
+                &repository,
+                "Merged the checkout",
+            ))
         }
     }
 
-    pub fn remove(&self, source: &SourceWorkspace) -> Result<()> {
+    pub fn remove(&self, source: &SourceWorkspace) -> Result<WorkflowOutcome> {
         let repository = self.linked_repository(source, "remove")?;
         self.worktrunk
             .remove(&source.cwd)
             .context("Worktrunk could not remove this worktree")?;
-        self.finish_removal(source, &repository, "removed")
+        Ok(self.finish_removal(source, &repository, "removed"))
     }
 
     fn linked_repository(
@@ -112,16 +213,20 @@ where
         source: &SourceWorkspace,
         repository: &RepositoryContext,
         operation: &str,
-    ) -> Result<()> {
-        self.focus_parent(repository, operation)?;
-        self.herdr
-            .close_workspace(&source.workspace_id)
-            .with_context(|| {
-                format!(
-                    "Worktrunk {operation} the checkout, but Herdr could not close workspace {}",
-                    source.workspace_id
-                )
-            })
+    ) -> WorkflowOutcome {
+        let mut outcome =
+            WorkflowOutcome::completed(repository, format!("Worktrunk {operation} the checkout"));
+        if let Err(error) = self.focus_parent(repository, operation) {
+            outcome.error = Some(format!(
+                "{error:#}; workspace {} remains open",
+                source.workspace_id
+            ));
+            return outcome;
+        }
+        outcome
+            .close_workspace_ids
+            .push(source.workspace_id.clone());
+        outcome
     }
 
     fn focus_parent(&self, repository: &RepositoryContext, operation: &str) -> Result<()> {
@@ -134,6 +239,14 @@ where
                 )
             })
     }
+}
+
+fn append_failure(outcome: &mut WorkflowOutcome, error: &anyhow::Error) {
+    let details = format!("{error:#}");
+    outcome.error = Some(match outcome.error.take() {
+        Some(previous) => format!("{previous}\n{details}"),
+        None => details,
+    });
 }
 
 fn same_path(left: &Path, right: &Path) -> bool {
@@ -156,9 +269,16 @@ mod tests {
     struct FakeHerdr {
         context: Option<RepositoryContext>,
         calls: RefCell<Vec<String>>,
+        registered: Vec<WorkspaceCheckout>,
+        fail_open: bool,
+        fail_focus: bool,
     }
 
     impl Herdr for FakeHerdr {
+        fn linked_workspaces(&self, _: &SourceWorkspace) -> Result<Vec<WorkspaceCheckout>> {
+            Ok(self.registered.clone())
+        }
+
         fn repository_context(&self, _: &SourceWorkspace) -> Result<RepositoryContext> {
             self.context
                 .clone()
@@ -166,6 +286,9 @@ mod tests {
         }
 
         fn open_worktree(&self, parent: &str, checkout: &Checkout, focus: bool) -> Result<()> {
+            if self.fail_open {
+                bail!("Herdr unavailable");
+            }
             self.calls.borrow_mut().push(format!(
                 "open:{parent}:{}:{}:{focus}",
                 checkout.branch.as_deref().unwrap_or("detached"),
@@ -175,6 +298,9 @@ mod tests {
         }
 
         fn focus_workspace(&self, workspace_id: &str) -> Result<()> {
+            if self.fail_focus {
+                bail!("focus unavailable");
+            }
             self.calls
                 .borrow_mut()
                 .push(format!("focus:{workspace_id}"));
@@ -194,10 +320,24 @@ mod tests {
         merge_removed: bool,
         calls: RefCell<Vec<String>>,
         fail: bool,
+        paths: RefCell<std::collections::VecDeque<Vec<PathBuf>>>,
+        fail_snapshot: bool,
+        remove_on_switch: Option<PathBuf>,
     }
 
     impl Worktrunk for FakeWorktrunk {
+        fn worktree_paths(&self, _: &Path) -> Result<Vec<PathBuf>> {
+            match self.paths.borrow_mut().pop_front() {
+                Some(paths) => Ok(paths),
+                None if self.fail_snapshot => bail!("snapshot failed"),
+                None => Ok(vec![PathBuf::from("/repo"), PathBuf::from("/repo.feature")]),
+            }
+        }
+
         fn switch(&self, cwd: &Path, mode: &SwitchMode) -> Result<Option<Checkout>> {
+            if let Some(path) = &self.remove_on_switch {
+                std::fs::remove_dir(path)?;
+            }
             self.calls
                 .borrow_mut()
                 .push(format!("switch:{}:{mode:?}", cwd.display()));
@@ -258,6 +398,9 @@ mod tests {
                 merge_removed: true,
                 calls: RefCell::default(),
                 fail,
+                paths: RefCell::default(),
+                fail_snapshot: false,
+                remove_on_switch: None,
             },
         )
     }
@@ -337,32 +480,210 @@ mod tests {
                 merge_removed: true,
                 calls: RefCell::default(),
                 fail: false,
+                paths: RefCell::default(),
+                fail_snapshot: false,
+                remove_on_switch: None,
             },
         );
 
-        engine.switch(&source(), &SwitchMode::Pick).unwrap();
+        let outcome = engine.switch(&source(), &SwitchMode::Pick).unwrap();
 
+        assert!(outcome.cancelled);
         assert_eq!(engine.herdr.calls.into_inner(), Vec::<String>::new());
     }
 
-    #[test]
-    fn merge_focuses_parent_before_closing_the_popup_owner() {
-        let engine = engine(
-            Checkout {
-                branch: None,
-                path: PathBuf::new(),
+    fn removed_picker_worktree(engine: &mut Engine<FakeHerdr, FakeWorktrunk>) {
+        engine.herdr.registered = vec![
+            WorkspaceCheckout {
+                workspace_id: "w3".into(),
+                path: PathBuf::from("/repo.removed"),
             },
-            true,
-            false,
-        );
-
-        engine.merge(&source()).unwrap();
-
-        assert_eq!(engine.herdr.calls.into_inner(), ["focus:w1", "close:w2"]);
+            WorkspaceCheckout {
+                workspace_id: "w4".into(),
+                path: PathBuf::from("/repo.retained"),
+            },
+            WorkspaceCheckout {
+                workspace_id: "w5".into(),
+                path: PathBuf::from("/repo.stale"),
+            },
+        ];
+        *engine.worktrunk.paths.borrow_mut() = [
+            vec![
+                PathBuf::from("/repo"),
+                PathBuf::from("/repo.removed"),
+                PathBuf::from("/repo.retained"),
+            ],
+            vec![PathBuf::from("/repo"), PathBuf::from("/repo.retained")],
+        ]
+        .into();
     }
 
     #[test]
-    fn remove_focuses_parent_before_closing_the_popup_owner() {
+    fn picker_removal_matches_registered_symlink_paths_before_checkout_disappears() {
+        let root = std::env::temp_dir().join(format!("wtherdr-alias-{}", std::process::id()));
+        std::fs::create_dir(&root).unwrap();
+        let checkout = root.join("checkout");
+        let alias = root.join("alias");
+        std::fs::create_dir(&checkout).unwrap();
+        std::os::unix::fs::symlink(&checkout, &alias).unwrap();
+        let mut engine = engine(
+            Checkout {
+                branch: None,
+                path: PathBuf::new(),
+            },
+            false,
+            false,
+        );
+        engine.worktrunk.checkout = None;
+        engine.worktrunk.remove_on_switch = Some(checkout.clone());
+        engine.herdr.registered = vec![WorkspaceCheckout {
+            workspace_id: "w3".into(),
+            path: alias.clone(),
+        }];
+        *engine.worktrunk.paths.borrow_mut() =
+            [vec![root.clone(), checkout], vec![root.clone()]].into();
+
+        let outcome = engine.switch(&source(), &SwitchMode::Pick).unwrap();
+        std::fs::remove_file(alias).unwrap();
+        std::fs::remove_dir(root).unwrap();
+
+        assert_eq!(outcome.close_workspace_ids, ["w3"]);
+    }
+
+    #[test]
+    fn cancelled_picker_reports_removed_checkout_without_an_open_workspace() {
+        let mut engine = engine(
+            Checkout {
+                branch: None,
+                path: PathBuf::new(),
+            },
+            false,
+            false,
+        );
+        engine.worktrunk.checkout = None;
+        *engine.worktrunk.paths.borrow_mut() = [
+            vec![PathBuf::from("/repo"), PathBuf::from("/repo.unopened")],
+            vec![PathBuf::from("/repo")],
+        ]
+        .into();
+
+        let outcome = engine.switch(&source(), &SwitchMode::Pick).unwrap();
+
+        assert!(!outcome.cancelled);
+        assert_eq!(outcome.close_workspace_ids, Vec::<String>::new());
+        assert!(outcome.message.contains("/repo.unopened"));
+        assert!(engine.herdr.calls.borrow().is_empty());
+    }
+
+    #[test]
+    fn cancelled_picker_reconciles_only_checkouts_proven_removed_during_the_action() {
+        let mut engine = engine(
+            Checkout {
+                branch: None,
+                path: PathBuf::new(),
+            },
+            false,
+            false,
+        );
+        engine.worktrunk.checkout = None;
+        removed_picker_worktree(&mut engine);
+
+        let outcome = engine.switch(&source(), &SwitchMode::Pick).unwrap();
+
+        assert!(!outcome.cancelled);
+        assert_eq!(outcome.close_workspace_ids, ["w3"]);
+        assert!(engine.herdr.calls.borrow().is_empty());
+    }
+
+    #[test]
+    fn picker_failure_preserves_cleanup_for_confirmed_removals() {
+        let mut engine = engine(
+            Checkout {
+                branch: None,
+                path: PathBuf::new(),
+            },
+            false,
+            true,
+        );
+        removed_picker_worktree(&mut engine);
+
+        let outcome = engine.switch(&source(), &SwitchMode::Pick).unwrap();
+
+        assert_eq!(outcome.close_workspace_ids, ["w3"]);
+        assert!(outcome.error.unwrap().contains("switch failed"));
+    }
+
+    #[test]
+    fn failed_workspace_open_preserves_cleanup_and_successful_checkout_details() {
+        let mut engine = engine(
+            Checkout {
+                branch: Some("selected".into()),
+                path: PathBuf::from("/repo.selected"),
+            },
+            false,
+            false,
+        );
+        engine.herdr.fail_open = true;
+        removed_picker_worktree(&mut engine);
+
+        let outcome = engine.switch(&source(), &SwitchMode::Pick).unwrap();
+
+        assert_eq!(outcome.close_workspace_ids, ["w3"]);
+        assert!(outcome.message.contains("selected"));
+        assert!(
+            outcome
+                .error
+                .unwrap()
+                .contains("Worktrunk switched to /repo.selected")
+        );
+    }
+
+    #[test]
+    fn failed_snapshot_preserves_selected_checkout_and_leaves_unverified_workspaces_open() {
+        let mut engine = engine(
+            Checkout {
+                branch: Some("selected".into()),
+                path: PathBuf::from("/repo.selected"),
+            },
+            false,
+            false,
+        );
+        removed_picker_worktree(&mut engine);
+        engine.worktrunk.paths.borrow_mut().truncate(1);
+        engine.worktrunk.fail_snapshot = true;
+
+        let outcome = engine.switch(&source(), &SwitchMode::Pick).unwrap();
+
+        assert_eq!(outcome.close_workspace_ids, Vec::<String>::new());
+        assert!(outcome.message.contains("selected"));
+        assert!(outcome.error.unwrap().contains("snapshot failed"));
+        assert_eq!(
+            *engine.herdr.calls.borrow(),
+            ["open:w1:selected:/repo.selected:true"]
+        );
+    }
+
+    #[test]
+    fn successful_remove_with_failed_parent_focus_reports_checkout_and_workspace_state() {
+        let mut engine = engine(
+            Checkout {
+                branch: None,
+                path: PathBuf::new(),
+            },
+            true,
+            false,
+        );
+        engine.herdr.fail_focus = true;
+
+        let outcome = engine.remove(&source()).unwrap();
+
+        assert!(outcome.message.contains("removed"));
+        assert!(outcome.error.unwrap().contains("workspace w2 remains open"));
+        assert_eq!(outcome.close_workspace_ids, Vec::<String>::new());
+    }
+
+    #[test]
+    fn merge_defers_popup_owner_closure_until_completion() {
         let engine = engine(
             Checkout {
                 branch: None,
@@ -372,9 +693,29 @@ mod tests {
             false,
         );
 
-        engine.remove(&source()).unwrap();
+        let outcome = engine.merge(&source()).unwrap();
 
-        assert_eq!(engine.herdr.calls.into_inner(), ["focus:w1", "close:w2"]);
+        assert_eq!(outcome.close_workspace_ids, ["w2"]);
+        assert_eq!(outcome.completion_source.workspace_id, "w1");
+        assert_eq!(engine.herdr.calls.into_inner(), ["focus:w1"]);
+    }
+
+    #[test]
+    fn remove_defers_popup_owner_closure_until_completion() {
+        let engine = engine(
+            Checkout {
+                branch: None,
+                path: PathBuf::new(),
+            },
+            true,
+            false,
+        );
+
+        let outcome = engine.remove(&source()).unwrap();
+
+        assert_eq!(outcome.close_workspace_ids, ["w2"]);
+        assert_eq!(outcome.completion_source.cwd, PathBuf::from("/repo"));
+        assert_eq!(engine.herdr.calls.into_inner(), ["focus:w1"]);
     }
 
     #[test]
@@ -389,6 +730,9 @@ mod tests {
                 merge_removed: false,
                 calls: RefCell::default(),
                 fail: false,
+                paths: RefCell::default(),
+                fail_snapshot: false,
+                remove_on_switch: None,
             },
         );
 
