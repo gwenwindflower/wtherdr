@@ -16,8 +16,8 @@ struct Directory {
 impl Directory {
     fn new() -> Self {
         static PROCESS_LOCK: Mutex<()> = Mutex::new(());
-        let process_guard = PROCESS_LOCK.lock().unwrap();
         static NEXT: AtomicU64 = AtomicU64::new(0);
+        let process_guard = PROCESS_LOCK.lock().unwrap();
         let path = std::env::temp_dir().join(format!(
             "wtherdr-actions-{}-{}",
             std::process::id(),
