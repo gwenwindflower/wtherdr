@@ -11,13 +11,17 @@ pub enum Key {
     Backspace,
     Clear,
     Tab,
+    Up,
+    Down,
     Char(char),
     Other,
 }
 
 pub fn key_from_byte(byte: u8) -> Option<Key> {
     match byte {
-        b'\r' | b'\n' => Some(Key::Enter),
+        b'\r' => Some(Key::Enter),
+        0x0a | 0x0e => Some(Key::Down),
+        0x0b | 0x10 => Some(Key::Up),
         b'\t' => Some(Key::Tab),
         0x03 | 0x15 => Some(Key::Clear),
         0x08 | 0x7f => Some(Key::Backspace),
@@ -116,7 +120,11 @@ fn read_escape(source: &mut impl KeySource) -> Key {
     if byte == b'[' || byte == b'O' {
         while let Some(byte) = source.pending_byte() {
             if byte.is_ascii_alphabetic() || byte == b'~' {
-                break;
+                return match byte {
+                    b'A' => Key::Up,
+                    b'B' => Key::Down,
+                    _ => Key::Other,
+                };
             }
         }
     }
@@ -140,16 +148,23 @@ fn read_char(source: &mut impl KeySource, leader: u8) -> Result<char> {
         .ok_or_else(|| anyhow!("the terminal sent an empty key"))
 }
 
-pub fn width() -> u16 {
+pub fn size() -> (u16, u16) {
     let mut size = MaybeUninit::<libc::winsize>::uninit();
     // SAFETY: the ioctl fills the provided winsize for the process stdout.
     let read = unsafe { libc::ioctl(stdout().as_raw_fd(), libc::TIOCGWINSZ, size.as_mut_ptr()) };
     if read != 0 {
-        return 80;
+        return (80, 24);
     }
     // SAFETY: the ioctl succeeded, so the value is initialized.
     let size = unsafe { size.assume_init() };
-    if size.ws_col == 0 { 80 } else { size.ws_col }
+    (
+        if size.ws_col == 0 { 80 } else { size.ws_col },
+        if size.ws_row == 0 { 24 } else { size.ws_row },
+    )
+}
+
+pub fn width() -> u16 {
+    size().0
 }
 
 pub fn enter_dialog_screen() -> Result<()> {
@@ -206,6 +221,31 @@ mod tests {
     }
 
     #[test]
+    fn selector_control_keys_and_arrows_navigate_without_submitting() {
+        for byte in [0x0a, 0x0e] {
+            assert_eq!(
+                read_key_from(&mut Recorded::new(&[byte])).unwrap(),
+                Key::Down
+            );
+        }
+        for byte in [0x0b, 0x10] {
+            assert_eq!(read_key_from(&mut Recorded::new(&[byte])).unwrap(), Key::Up);
+        }
+        assert_eq!(
+            read_key_from(&mut Recorded::new(b"\x1b[B")).unwrap(),
+            Key::Down
+        );
+        assert_eq!(
+            read_key_from(&mut Recorded::new(b"\x1b[A")).unwrap(),
+            Key::Up
+        );
+        assert_eq!(
+            read_key_from(&mut Recorded::new(b"\r")).unwrap(),
+            Key::Enter
+        );
+    }
+
+    #[test]
     fn a_bare_escape_cancels_and_an_escape_sequence_does_not() {
         assert_eq!(
             read_key_from(&mut Recorded::new(b"\x1b")).unwrap(),
@@ -213,7 +253,7 @@ mod tests {
         );
         assert_eq!(
             read_key_from(&mut Recorded::new(b"\x1b[A")).unwrap(),
-            Key::Other
+            Key::Up
         );
     }
 

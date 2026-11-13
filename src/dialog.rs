@@ -42,7 +42,7 @@ pub fn frame(dialog: &Dialog, width: u16) -> String {
     rendered
 }
 
-fn hint_row(hints: &[Hint], width: u16) -> String {
+pub(crate) fn hint_row(hints: &[Hint], width: u16) -> String {
     if hints.is_empty() {
         return String::new();
     }
@@ -93,7 +93,7 @@ impl CreateInput {
                 self.branch.pop();
             }
             Key::Char(character) => self.branch.push(character),
-            Key::Enter | Key::Other => {}
+            Key::Enter | Key::Other | Key::Up | Key::Down => {}
         }
         InputResult::Editing
     }

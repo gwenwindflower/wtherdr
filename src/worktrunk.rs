@@ -1,5 +1,6 @@
 use std::ffi::OsString;
 use std::fs::{self, OpenOptions};
+use std::os::unix::ffi::OsStringExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -159,20 +160,22 @@ impl CommandRunner {
             .then(DirectiveFiles::create)
             .transpose()
             .context("could not prepare Worktrunk shell integration")?;
-        self.command(args, directives.as_ref())
-            .output()
-            .with_context(|| {
-                format!(
-                    "could not start Worktrunk with {}",
-                    self.binary.to_string_lossy()
-                )
-            })
+        crate::transcript::run(&mut self.command(args, directives.as_ref())).with_context(|| {
+            format!(
+                "could not start Worktrunk with {}",
+                self.binary.to_string_lossy()
+            )
+        })
     }
 
     fn run_json(&self, args: &[OsString], operation: &str) -> Result<Vec<u8>> {
         let output = self.output(args, true)?;
         if !output.status.success() {
-            bail!("Worktrunk {operation} exited with {}", output.status);
+            bail!(
+                "Worktrunk {operation} exited with {}\n{}",
+                output.status,
+                crate::transcript::diagnostic(&output.stderr)
+            );
         }
         if output.stdout.is_empty() {
             bail!("Worktrunk {operation} returned no machine-readable result");
@@ -199,13 +202,36 @@ impl Default for CommandRunner {
 }
 
 impl Worktrunk for CommandRunner {
+    fn worktree_paths(&self, cwd: &Path) -> Result<Vec<PathBuf>> {
+        let output = Command::new("git")
+            .arg("-C")
+            .arg(cwd)
+            .args(["worktree", "list", "--porcelain", "-z"])
+            .output()
+            .with_context(|| format!("could not list Git worktrees in {}", cwd.display()))?;
+        if !output.status.success() {
+            bail!(
+                "could not list Git worktrees in {}: {}",
+                cwd.display(),
+                String::from_utf8_lossy(&output.stderr).trim()
+            );
+        }
+        parse_worktree_paths(&output.stdout)
+            .with_context(|| format!("could not read Git worktree paths in {}", cwd.display()))
+    }
+
     fn switch(&self, cwd: &Path, mode: &SwitchMode) -> Result<Option<Checkout>> {
         let output = self.output(&Self::switch_args(cwd, mode), false)?;
         if output.status.code() == Some(130) {
             return Ok(None);
         }
         if !output.status.success() {
-            bail!("Worktrunk switch exited with {}", output.status);
+            bail!(
+                "Worktrunk switch in {} exited with {}\n{}",
+                cwd.display(),
+                output.status,
+                crate::transcript::diagnostic(&output.stderr)
+            );
         }
         Self::parse_switch(&output.stdout)
     }
@@ -240,12 +266,42 @@ impl Worktrunk for CommandRunner {
     }
 }
 
+fn parse_worktree_paths(stdout: &[u8]) -> Result<Vec<PathBuf>> {
+    let paths: Vec<PathBuf> = stdout
+        .split(|byte| *byte == 0)
+        .filter_map(|field| field.strip_prefix(b"worktree "))
+        .map(|path| PathBuf::from(OsString::from_vec(path.to_vec())))
+        .collect();
+    if paths.is_empty() || paths.iter().any(|path| !path.is_absolute()) {
+        bail!("Git returned no valid absolute worktree paths");
+    }
+    Ok(paths)
+}
+
 #[cfg(test)]
 mod tests {
     use std::ffi::OsStr;
     use std::path::PathBuf;
 
     use super::*;
+
+    #[test]
+    fn worktree_snapshot_keeps_paths_with_spaces_and_newlines() {
+        assert_eq!(parse_worktree_paths(b"worktree /repo\0HEAD abcd\0branch refs/heads/main\0\0worktree /repo.feature\nname with spaces\0HEAD efgh\0detached\0\0").unwrap(),
+            [PathBuf::from("/repo"), PathBuf::from("/repo.feature\nname with spaces")]);
+    }
+
+    #[test]
+    fn empty_or_malformed_snapshot_cannot_prove_every_checkout_removed() {
+        for output in [
+            b"".as_slice(),
+            b"not a worktree snapshot\0",
+            b"worktree \0",
+            b"worktree relative\0",
+        ] {
+            assert!(parse_worktree_paths(output).is_err());
+        }
+    }
 
     fn strings(values: Vec<OsString>) -> Vec<String> {
         values

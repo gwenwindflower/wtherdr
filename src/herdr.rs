@@ -7,7 +7,9 @@ use anyhow::{Context, Result, anyhow, bail};
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use crate::model::{Checkout, RepositoryContext, SourceWorkspace};
+use crate::model::{
+    Checkout, RepositoryContext, SourceWorkspace, WorkflowOutcome, WorkspaceCheckout,
+};
 use crate::workflow::Herdr;
 
 pub fn repository_context(result: &Value, source: &SourceWorkspace) -> Result<RepositoryContext> {
@@ -80,6 +82,7 @@ struct WorktreeSource {
 
 #[derive(Deserialize)]
 struct WorktreeRecord {
+    path: PathBuf,
     branch: Option<String>,
     label: Option<String>,
     open_workspace_id: Option<String>,
@@ -179,6 +182,27 @@ impl Api {
 }
 
 impl Herdr for Api {
+    fn linked_workspaces(&self, source: &SourceWorkspace) -> Result<Vec<WorkspaceCheckout>> {
+        let result = self
+            .client
+            .call("worktree.list", &json!({ "cwd": absolute(&source.cwd)? }))?;
+        let listing: WorktreeList =
+            serde_json::from_value(result).context("Herdr returned an unreadable worktree list")?;
+        Ok(listing
+            .worktrees
+            .into_iter()
+            .filter(|worktree| worktree.is_linked_worktree)
+            .filter_map(|worktree| {
+                worktree
+                    .open_workspace_id
+                    .map(|workspace_id| WorkspaceCheckout {
+                        workspace_id,
+                        path: worktree.path,
+                    })
+            })
+            .collect())
+    }
+
     fn repository_context(&self, source: &SourceWorkspace) -> Result<RepositoryContext> {
         let result = self
             .client
@@ -213,6 +237,15 @@ impl Herdr for Api {
 }
 
 impl Api {
+    pub fn finish_cleanup(&self, outcome: &WorkflowOutcome) -> Result<()> {
+        for workspace_id in &outcome.close_workspace_ids {
+            self.close_workspace(workspace_id).with_context(|| format!(
+                "{}; the checkout is removed, but Herdr could not close workspace {workspace_id}", outcome.message
+            ))?;
+        }
+        Ok(())
+    }
+
     pub fn open_popup(
         &self,
         entrypoint: &str,
