@@ -4,13 +4,19 @@ use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Mutex, MutexGuard};
 
 use wtherdr::actions::Actions;
 
-struct Directory(PathBuf);
+struct Directory {
+    path: PathBuf,
+    _process_guard: MutexGuard<'static, ()>,
+}
 
 impl Directory {
     fn new() -> Self {
+        static PROCESS_LOCK: Mutex<()> = Mutex::new(());
+        let process_guard = PROCESS_LOCK.lock().unwrap();
         static NEXT: AtomicU64 = AtomicU64::new(0);
         let path = std::env::temp_dir().join(format!(
             "wtherdr-actions-{}-{}",
@@ -18,11 +24,14 @@ impl Directory {
             NEXT.fetch_add(1, Ordering::Relaxed)
         ));
         fs::create_dir(&path).unwrap();
-        Self(path)
+        Self {
+            path,
+            _process_guard: process_guard,
+        }
     }
 
     fn executable(&self, script: &str) -> PathBuf {
-        let path = self.0.join("wt");
+        let path = self.path.join("wt");
         fs::write(&path, format!("#!/bin/sh\nset -eu\n{script}\n")).unwrap();
         fs::set_permissions(&path, fs::Permissions::from_mode(0o700)).unwrap();
         path
@@ -31,7 +40,7 @@ impl Directory {
 
 impl Drop for Directory {
     fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.0);
+        let _ = fs::remove_dir_all(&self.path);
     }
 }
 
@@ -50,9 +59,12 @@ fn git(cwd: &Path, args: &[&str]) {
 #[test]
 fn branches_include_local_and_remote_refs_without_symbolic_aliases() {
     let directory = Directory::new();
-    git(&directory.0, &["init", "--initial-branch=main", "--quiet"]);
     git(
-        &directory.0,
+        &directory.path,
+        &["init", "--initial-branch=main", "--quiet"],
+    );
+    git(
+        &directory.path,
         &[
             "-c",
             "user.name=Test",
@@ -66,13 +78,13 @@ fn branches_include_local_and_remote_refs_without_symbolic_aliases() {
             "--quiet",
         ],
     );
-    git(&directory.0, &["branch", "feature/api"]);
+    git(&directory.path, &["branch", "feature/api"]);
     git(
-        &directory.0,
+        &directory.path,
         &["update-ref", "refs/remotes/origin/main", "HEAD"],
     );
     git(
-        &directory.0,
+        &directory.path,
         &[
             "symbolic-ref",
             "refs/remotes/origin/HEAD",
@@ -81,7 +93,7 @@ fn branches_include_local_and_remote_refs_without_symbolic_aliases() {
     );
 
     assert_eq!(
-        Actions::default().branches(&directory.0).unwrap(),
+        Actions::default().branches(&directory.path).unwrap(),
         ["feature/api", "main", "origin/main"]
     );
 }
@@ -97,7 +109,7 @@ printf '%s\n' '[{"type":"pre-merge","source":"project","name":"gate"},{"type":"p
 "#);
 
     assert_eq!(
-        Actions::new(binary, "git").hooks(&directory.0).unwrap(),
+        Actions::new(binary, "git").hooks(&directory.path).unwrap(),
         [
             "post-start user:",
             "pre-merge project:gate",
@@ -121,10 +133,10 @@ esac
 "#);
 
     Actions::new(binary, "git")
-        .run_hook(&directory.0, "post-start user:build")
+        .run_hook(&directory.path, "post-start user:build")
         .unwrap();
     assert_eq!(
-        fs::read_to_string(directory.0.join("built")).unwrap(),
+        fs::read_to_string(directory.path.join("built")).unwrap(),
         "built\n"
     );
 }
@@ -141,11 +153,11 @@ case "$*" in
 esac
 "#);
     let error = Actions::new(binary, "git")
-        .run_hook(&directory.0, "pre-merge project:test")
+        .run_hook(&directory.path, "pre-merge project:test")
         .unwrap_err()
         .to_string();
     assert!(error.contains("pre-merge project:test"));
-    assert!(error.contains(&directory.0.display().to_string()));
+    assert!(error.contains(&directory.path.display().to_string()));
     assert!(error.contains('5'));
 }
 
@@ -154,7 +166,7 @@ fn stale_or_invented_hook_selection_does_not_execute() {
     let directory = Directory::new();
     let binary = directory.executable("test \"$4\" = show\nprintf '[]\\n'");
     let error = Actions::new(binary, "git")
-        .run_hook(&directory.0, "post-start user:missing")
+        .run_hook(&directory.path, "post-start user:missing")
         .unwrap_err();
     assert!(error.to_string().contains("no longer configured"));
 }
@@ -174,7 +186,7 @@ test "$4" = origin/main
 "#,
     );
     Actions::new(binary, OsStr::new("git"))
-        .rebase(&directory.0, "origin/main")
+        .rebase(&directory.path, "origin/main")
         .unwrap();
 }
 
@@ -183,10 +195,10 @@ fn rebase_failure_explains_where_to_resolve_or_abort() {
     let directory = Directory::new();
     let binary = directory.executable("exit 1");
     let error = Actions::new(binary, "git")
-        .rebase(&directory.0, "main")
+        .rebase(&directory.path, "main")
         .unwrap_err()
         .to_string();
-    assert!(error.contains(&directory.0.display().to_string()));
+    assert!(error.contains(&directory.path.display().to_string()));
     assert!(error.contains("main"));
     assert!(error.contains("git rebase --continue"));
     assert!(error.contains("git rebase --abort"));
