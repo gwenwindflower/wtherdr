@@ -96,6 +96,12 @@ fn prompt(workflow: PopupWorkflow) -> Result<()> {
             Vec::new()
         }
         PopupWorkflow::Switch => bail!("switch opens Worktrunk's picker without a dialog"),
+        PopupWorkflow::Clean => {
+            if !dialog::confirm(&repository.repo_name, "integrated worktrees", "clean")? {
+                return Ok(());
+            }
+            Vec::new()
+        }
         PopupWorkflow::Rebase => {
             let branches = Actions::default().branches(&source.cwd)?;
             let Some(target) =
@@ -193,6 +199,7 @@ fn perform(
         PopupWorkflow::Switch => engine.switch(source, &SwitchMode::Pick),
         PopupWorkflow::Merge => engine.merge(source),
         PopupWorkflow::Remove => engine.remove(source),
+        PopupWorkflow::Clean => engine.clean(source),
         PopupWorkflow::Rebase => {
             let target = base
                 .or_else(|| std::env::var("WTHERDR_BASE").ok())

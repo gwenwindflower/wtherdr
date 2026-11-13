@@ -4,9 +4,9 @@
 
 | Entrypoint | Command | Size |
 | --- | --- | --- |
-| `create`, `merge`, `remove` | `wtherdr prompt <workflow>` | 72 × 7 cells |
+| `create`, `merge`, `remove`, `clean` | `wtherdr prompt <workflow>` | 72 × 7 cells |
 | `rebase`, `hook` | `wtherdr prompt <workflow>` | 80 × 18 cells |
-| `create-run`, `switch-run`, `merge-run`, `remove-run`, `rebase-run`, `hook-run` | `wtherdr run <workflow>` | 90% × 85% |
+| `create-run`, `switch-run`, `merge-run`, `remove-run`, `rebase-run`, `hook-run`, `clean-run` | `wtherdr run <workflow>` | 90% × 85% |
 | `complete` | `wtherdr finish` | 72 × 7 cells |
 
 Dimensions live in `herdr-plugin.toml` and nowhere else: numbers are outer terminal cells, strings are a percentage of the terminal area, and anything below Herdr's popup minimum is clamped. `plugin.pane.open` can override them, but wtherdr sends geometry-free requests so the manifest stays the single place to retune a popup. Manifest changes need `herdr plugin link .` again; Rust changes need a reinstall.

@@ -21,6 +21,7 @@ pub trait Herdr {
 }
 
 pub trait Worktrunk {
+    fn clean_candidates(&self, cwd: &Path) -> Result<Vec<std::path::PathBuf>>;
     fn switch(&self, cwd: &Path, mode: &SwitchMode) -> Result<Option<Checkout>>;
     fn merge(&self, cwd: &Path) -> Result<MergeOutcome>;
     fn remove(&self, cwd: &Path) -> Result<()>;
@@ -143,8 +144,36 @@ where
                 return Err(error);
             }
             append_failure(&mut outcome, &error);
+        } else if matches!(mode, SwitchMode::Pick)
+            && !same_path(&checkout.path, &repository.root_path)
+        {
+            match self.checkout_workspace(source, &checkout) {
+                Ok(workspace) => outcome.completion_source = workspace,
+                Err(error) => append_failure(&mut outcome, &error),
+            }
         }
         Ok(outcome)
+    }
+
+    fn checkout_workspace(
+        &self,
+        source: &SourceWorkspace,
+        checkout: &Checkout,
+    ) -> Result<SourceWorkspace> {
+        self.herdr
+            .linked_workspaces(source)?
+            .into_iter()
+            .find(|workspace| same_path(&workspace.path, &checkout.path))
+            .map(|workspace| SourceWorkspace {
+                workspace_id: workspace.workspace_id,
+                cwd: checkout.path.clone(),
+            })
+            .with_context(|| {
+                format!(
+                    "Herdr opened {}, but its workspace could not be found for the result popup",
+                    checkout.path.display()
+                )
+            })
     }
 
     fn open_checkout(
@@ -171,6 +200,62 @@ where
                     )
                 })
         }
+    }
+
+    pub fn clean(&self, source: &SourceWorkspace) -> Result<WorkflowOutcome> {
+        let repository = self.herdr.repository_context(source)?;
+        let candidates = self.worktrunk.clean_candidates(&repository.root_path)?;
+        let before = self.worktrunk.worktree_paths(&repository.root_path)?;
+        let candidates: Vec<_> = candidates
+            .into_iter()
+            .filter(|path| {
+                !same_path(path, &repository.root_path)
+                    && before.iter().any(|existing| same_path(path, existing))
+            })
+            .collect();
+        let tracked: Vec<_> = self
+            .herdr
+            .linked_workspaces(source)?
+            .into_iter()
+            .filter_map(|workspace| {
+                candidates
+                    .iter()
+                    .find(|path| same_path(path, &workspace.path))
+                    .map(|path| WorkspaceCheckout {
+                        workspace_id: workspace.workspace_id,
+                        path: path.clone(),
+                    })
+            })
+            .collect();
+        let mut outcome =
+            WorkflowOutcome::completed(&repository, "No integrated worktrees to clean");
+        for path in &candidates {
+            if let Err(error) = self
+                .worktrunk
+                .remove(path)
+                .with_context(|| format!("Could not clean worktree {}", path.display()))
+            {
+                append_failure(&mut outcome, &error);
+            }
+        }
+        match self.worktrunk.worktree_paths(&repository.root_path)
+            .context("Cleanup ran, but checkout removal could not be verified; Herdr workspaces remain open") {
+            Ok(after) => {
+                let removed: Vec<_> = candidates.iter().filter(|path| !after.iter().any(|current| same_path(path, current))).collect();
+                if !candidates.is_empty() {
+                    outcome.message = format!("Cleaned {} of {} integrated worktrees", removed.len(), candidates.len());
+                }
+                outcome.close_workspace_ids = tracked.into_iter()
+                    .filter(|workspace| removed.iter().any(|path| same_path(path, &workspace.path)))
+                    .map(|workspace| workspace.workspace_id).collect();
+            }
+            Err(error) => append_failure(&mut outcome, &error),
+        }
+        if let Err(error) = self.focus_parent(&repository, "cleaned integrated worktrees from") {
+            append_failure(&mut outcome, &error);
+            outcome.close_workspace_ids.clear();
+        }
+        Ok(outcome)
     }
 
     pub fn merge(&self, source: &SourceWorkspace) -> Result<WorkflowOutcome> {
@@ -276,7 +361,19 @@ mod tests {
 
     impl Herdr for FakeHerdr {
         fn linked_workspaces(&self, _: &SourceWorkspace) -> Result<Vec<WorkspaceCheckout>> {
-            Ok(self.registered.clone())
+            let mut registered = self.registered.clone();
+            if self
+                .calls
+                .borrow()
+                .iter()
+                .any(|call| call.starts_with("open:w1:feature:/repo.feature:"))
+            {
+                registered.push(WorkspaceCheckout {
+                    workspace_id: "w2".into(),
+                    path: PathBuf::from("/repo.feature"),
+                });
+            }
+            Ok(registered)
         }
 
         fn repository_context(&self, _: &SourceWorkspace) -> Result<RepositoryContext> {
@@ -326,6 +423,12 @@ mod tests {
     }
 
     impl Worktrunk for FakeWorktrunk {
+        fn clean_candidates(&self, _: &Path) -> Result<Vec<PathBuf>> {
+            Ok(vec![
+                PathBuf::from("/repo.feature"),
+                PathBuf::from("/repo.unopened"),
+            ])
+        }
         fn worktree_paths(&self, _: &Path) -> Result<Vec<PathBuf>> {
             match self.paths.borrow_mut().pop_front() {
                 Some(paths) => Ok(paths),
@@ -403,6 +506,125 @@ mod tests {
                 remove_on_switch: None,
             },
         )
+    }
+
+    #[test]
+    fn clean_without_eligible_checkouts_preserves_workspaces_and_focuses_main() {
+        let engine = engine(
+            Checkout {
+                branch: None,
+                path: PathBuf::new(),
+            },
+            false,
+            false,
+        );
+        *engine.worktrunk.paths.borrow_mut() =
+            [vec![PathBuf::from("/repo")], vec![PathBuf::from("/repo")]].into();
+
+        let outcome = engine.clean(&source()).unwrap();
+
+        assert!(engine.worktrunk.calls.borrow().is_empty());
+        assert_eq!(outcome.close_workspace_ids, Vec::<String>::new());
+        assert_eq!(engine.herdr.calls.into_inner(), ["focus:w1"]);
+        assert_eq!(outcome.message, "No integrated worktrees to clean");
+    }
+
+    #[test]
+    fn clean_keeps_workspaces_open_when_checkout_removal_cannot_be_verified() {
+        let mut engine = engine(
+            Checkout {
+                branch: None,
+                path: PathBuf::new(),
+            },
+            true,
+            false,
+        );
+        engine.herdr.registered = vec![WorkspaceCheckout {
+            workspace_id: "w2".into(),
+            path: PathBuf::from("/repo.feature"),
+        }];
+        *engine.worktrunk.paths.borrow_mut() =
+            [vec![PathBuf::from("/repo"), PathBuf::from("/repo.feature")]].into();
+        engine.worktrunk.fail_snapshot = true;
+
+        let outcome = engine.clean(&source()).unwrap();
+
+        assert_eq!(outcome.close_workspace_ids, Vec::<String>::new());
+        assert!(outcome.error.unwrap().contains("could not be verified"));
+        assert_eq!(engine.herdr.calls.into_inner(), ["focus:w1"]);
+    }
+
+    #[test]
+    fn clean_removes_integrated_checkouts_and_closes_only_their_visible_workspaces() {
+        let mut engine = engine(
+            Checkout {
+                branch: None,
+                path: PathBuf::new(),
+            },
+            false,
+            false,
+        );
+        engine.herdr.registered = vec![
+            WorkspaceCheckout {
+                workspace_id: "w2".into(),
+                path: PathBuf::from("/repo.feature"),
+            },
+            WorkspaceCheckout {
+                workspace_id: "w3".into(),
+                path: PathBuf::from("/repo.active"),
+            },
+        ];
+        *engine.worktrunk.paths.borrow_mut() = [
+            vec!["/repo", "/repo.feature", "/repo.unopened", "/repo.active"]
+                .into_iter()
+                .map(PathBuf::from)
+                .collect(),
+            vec![PathBuf::from("/repo"), PathBuf::from("/repo.active")],
+        ]
+        .into();
+
+        let outcome = engine.clean(&source()).unwrap();
+
+        assert_eq!(
+            engine.worktrunk.calls.into_inner(),
+            ["remove:/repo.feature", "remove:/repo.unopened"]
+        );
+        assert_eq!(engine.herdr.calls.into_inner(), ["focus:w1"]);
+        assert_eq!(outcome.close_workspace_ids, ["w2"]);
+        assert_eq!(outcome.completion_source.workspace_id, "w1");
+        assert!(outcome.error.is_none());
+        assert_eq!(outcome.message, "Cleaned 2 of 2 integrated worktrees");
+    }
+
+    #[test]
+    fn clean_reconciles_removed_checkouts_even_when_removal_reports_failure() {
+        let mut engine = engine(
+            Checkout {
+                branch: None,
+                path: PathBuf::new(),
+            },
+            true,
+            true,
+        );
+        engine.herdr.registered = vec![WorkspaceCheckout {
+            workspace_id: "w2".into(),
+            path: PathBuf::from("/repo.feature"),
+        }];
+        *engine.worktrunk.paths.borrow_mut() = [
+            vec![
+                PathBuf::from("/repo"),
+                PathBuf::from("/repo.feature"),
+                PathBuf::from("/repo.unopened"),
+            ],
+            vec![PathBuf::from("/repo"), PathBuf::from("/repo.unopened")],
+        ]
+        .into();
+
+        let outcome = engine.clean(&source()).unwrap();
+
+        assert_eq!(outcome.close_workspace_ids, ["w2"]);
+        assert!(outcome.error.unwrap().contains("remove failed"));
+        assert_eq!(engine.herdr.calls.into_inner(), ["focus:w1"]);
     }
 
     #[test]
