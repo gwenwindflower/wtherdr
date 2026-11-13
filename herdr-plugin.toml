@@ -139,3 +139,25 @@ placement = "popup"
 width = 72
 height = 7
 command = ["wtherdr", "finish"]
+
+[[actions]]
+id = "clean"
+title = "wt clean"
+contexts = ["workspace"]
+command = ["wtherdr", "popup", "clean"]
+
+[[panes]]
+id = "clean"
+title = "wt clean"
+placement = "popup"
+width = 72
+height = 7
+command = ["wtherdr", "prompt", "clean"]
+
+[[panes]]
+id = "clean-run"
+title = "wt clean"
+placement = "popup"
+width = "90%"
+height = "85%"
+command = ["wtherdr", "run", "clean"]

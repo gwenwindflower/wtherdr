@@ -202,6 +202,21 @@ impl Default for CommandRunner {
 }
 
 impl Worktrunk for CommandRunner {
+    fn clean_candidates(&self, cwd: &Path) -> Result<Vec<PathBuf>> {
+        let output = self.run_json(
+            &[
+                "-C".into(),
+                cwd.as_os_str().to_owned(),
+                "--config-set".into(),
+                "list.json-schema=2".into(),
+                "list".into(),
+                "--format=json".into(),
+                "--no-progressive".into(),
+            ],
+            "list clean candidates",
+        )?;
+        parse_clean_candidates(&output)
+    }
     fn worktree_paths(&self, cwd: &Path) -> Result<Vec<PathBuf>> {
         let output = Command::new("git")
             .arg("-C")
@@ -266,6 +281,53 @@ impl Worktrunk for CommandRunner {
     }
 }
 
+fn parse_clean_candidates(stdout: &[u8]) -> Result<Vec<PathBuf>> {
+    let listing: serde_json::Value = serde_json::from_slice(stdout)
+        .context("Worktrunk returned an unreadable cleanup candidate list")?;
+    if listing["schema"] != 2 {
+        bail!("Cleanup requires Worktrunk list JSON schema 2; upgrade Worktrunk before cleaning");
+    }
+    let items = listing["items"]
+        .as_array()
+        .context("Worktrunk cleanup list did not include items")?;
+    Ok(items
+        .iter()
+        .filter_map(|item| {
+            let worktree = &item["worktree"];
+            let integrated = matches!(
+                item["default_branch"]["integration"]["reason"].as_str(),
+                Some(
+                    "same_commit"
+                        | "ancestor"
+                        | "no_added_changes"
+                        | "trees_match"
+                        | "merge_adds_nothing"
+                        | "patch_id_match"
+                )
+            );
+            let clean = [
+                "staged",
+                "modified",
+                "untracked",
+                "renamed",
+                "deleted",
+                "conflicted",
+            ]
+            .iter()
+            .all(|field| worktree["changes"][field].as_bool() == Some(false));
+            let path = PathBuf::from(worktree["path"].as_str()?);
+            (integrated
+                && clean
+                && path.is_absolute()
+                && worktree["main"].as_bool() == Some(false)
+                && worktree.get("locked").is_none()
+                && worktree.get("prunable").is_none()
+                && worktree.get("operation").is_none())
+            .then_some(path)
+        })
+        .collect())
+}
+
 fn parse_worktree_paths(stdout: &[u8]) -> Result<Vec<PathBuf>> {
     let paths: Vec<PathBuf> = stdout
         .split(|byte| *byte == 0)
@@ -284,6 +346,74 @@ mod tests {
     use std::path::PathBuf;
 
     use super::*;
+
+    #[test]
+    fn clean_selects_only_integrated_clean_unlocked_linked_checkouts() {
+        let base = serde_json::json!({
+            "branch": "landed", "display": {"state": "integrated"},
+            "default_branch": {"integration": {"reason": "ancestor"}},
+            "worktree": {"path": "/repo.landed", "main": false, "detached": false,
+                "changes": {"staged": false, "modified": false, "untracked": false,
+                    "renamed": false, "deleted": false, "conflicted": false}}
+        });
+        let mut rows = vec![base.clone()];
+        let mut detached = base.clone();
+        detached["branch"] = serde_json::Value::Null;
+        detached["worktree"]["detached"] = true.into();
+        detached["worktree"]["path"] = "/repo.detached".into();
+        rows.push(detached);
+        for (pointer, value) in [
+            ("/worktree/main", serde_json::json!(true)),
+            ("/worktree/locked", serde_json::json!({"reason": "keep"})),
+            (
+                "/worktree/prunable",
+                serde_json::json!({"reason": "missing"}),
+            ),
+            ("/worktree/operation", serde_json::json!("rebase")),
+            ("/default_branch/integration", serde_json::Value::Null),
+            ("/worktree/path", serde_json::json!("relative")),
+        ] {
+            let mut row = base.clone();
+            let (parent, key) = pointer.rsplit_once('/').unwrap();
+            row.pointer_mut(parent).unwrap()[key] = value;
+            rows.push(row);
+        }
+        for field in [
+            "staged",
+            "modified",
+            "untracked",
+            "renamed",
+            "deleted",
+            "conflicted",
+        ] {
+            let mut row = base.clone();
+            row["worktree"]["changes"][field] = true.into();
+            rows.push(row);
+        }
+        let mut unknown = base.clone();
+        unknown["worktree"]["changes"]["conflicted"] = serde_json::Value::Null;
+        rows.push(unknown);
+        let input = serde_json::to_vec(&serde_json::json!({"schema": 2, "items": rows})).unwrap();
+        assert_eq!(
+            parse_clean_candidates(&input).unwrap(),
+            [
+                PathBuf::from("/repo.landed"),
+                PathBuf::from("/repo.detached")
+            ]
+        );
+    }
+
+    #[test]
+    fn clean_rejects_unrecognized_list_formats() {
+        for input in [
+            b"[]".as_slice(),
+            b"{}",
+            b"{\"schema\":3,\"items\":[]}",
+            b"garbage",
+        ] {
+            assert!(parse_clean_candidates(input).is_err());
+        }
+    }
 
     #[test]
     fn worktree_snapshot_keeps_paths_with_spaces_and_newlines() {
