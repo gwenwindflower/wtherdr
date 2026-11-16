@@ -5,7 +5,7 @@ use clap::{Parser, Subcommand, ValueEnum};
     name = "wtherdr",
     version,
     about = "Worktrunk worktree workflows as native Herdr workspaces",
-    long_about = "wtherdr runs Worktrunk's switch, create, merge, remove, rebase, and hook workflows in \
+    long_about = "wtherdr runs Worktrunk's switch, create, merge, remove, clean, rebase, and hook workflows in \
 Herdr modal popups. Worktrunk owns Git worktrees and lifecycle hooks; Herdr opens the resulting \
 checkouts as nested workspaces and reconciles them after cleanup."
 )]
@@ -65,6 +65,7 @@ pub enum PopupWorkflow {
     Switch,
     Merge,
     Remove,
+    Clean,
     Rebase,
     Hook,
 }
@@ -76,6 +77,7 @@ impl PopupWorkflow {
             Self::Switch => "switch",
             Self::Merge => "merge",
             Self::Remove => "remove",
+            Self::Clean => "clean",
             Self::Rebase => "rebase",
             Self::Hook => "hook",
         }
@@ -94,6 +96,7 @@ impl PopupWorkflow {
             Self::Switch => "switch-run",
             Self::Merge => "merge-run",
             Self::Remove => "remove-run",
+            Self::Clean => "clean-run",
             Self::Rebase => "rebase-run",
             Self::Hook => "hook-run",
         }

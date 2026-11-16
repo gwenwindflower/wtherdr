@@ -15,3 +15,7 @@ wtherdr presents Worktrunk actions in Herdr popups while retaining Worktrunk's i
 - **wf-R011** — Hook execution waits for the selected command to finish and retains Worktrunk's approval prompts.
 - **wf-R012** — Rebase conflicts remain available for `git rebase --continue` or `git rebase --abort` in the affected checkout.
 - **wf-R013** — Successful creation closes after workspace reconciliation without presenting a success popup.
+- **wf-R014** — Switching from the repository parent opens or focuses the selected checkout as a nested workspace without changing the parent's branch. Switching between nested workspaces focuses the selected workspace; selecting the root checkout focuses the parent. The result popup belongs to that destination.
+- **wf-R015** — Merge and remove finish with the repository parent focused, including after closing removed worktree workspaces.
+- **wf-R016** — The clean action confirms batch removal of integrated, clean, unlocked linked checkouts identified by Worktrunk. It preserves the repository root, unresolved statuses, checkouts with work in progress, and unintegrated changes; it never uses force flags or bypasses hooks or approvals.
+- **wf-R017** — Clean continues after individual failures, closes only visible nested workspaces whose candidate checkouts are confirmed removed, reports partial results, and finishes on the repository parent. Closing the run popup's workspace remains deferred until completion.

@@ -243,6 +243,15 @@ impl Api {
                 "{}; the checkout is removed, but Herdr could not close workspace {workspace_id}", outcome.message
             ))?;
         }
+        if !outcome.close_workspace_ids.is_empty() {
+            self.focus_workspace(&outcome.completion_source.workspace_id)
+                .with_context(|| {
+                    format!(
+                        "Workspaces closed, but Herdr could not focus workspace {}",
+                        outcome.completion_source.workspace_id
+                    )
+                })?;
+        }
         Ok(())
     }
 

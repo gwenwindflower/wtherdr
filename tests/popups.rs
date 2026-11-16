@@ -51,6 +51,7 @@ impl Session {
                     }
                     Err(error) => panic!("mock Herdr accept failed: {error}"),
                 };
+                stream.set_nonblocking(false).unwrap();
                 stream
                     .set_read_timeout(Some(Duration::from_secs(2)))
                     .unwrap();
@@ -231,6 +232,73 @@ fn removed_workspace_survives_until_the_completion_popup_handles_cleanup() {
         .find(|request| request["method"] == "workspace.close")
         .unwrap();
     assert_eq!(close["params"]["workspace_id"], "w2");
+    assert_eq!(requests.last().unwrap()["method"], "workspace.focus");
+    assert_eq!(requests.last().unwrap()["params"]["workspace_id"], "w1");
+}
+
+#[test]
+fn clean_removes_integrated_checkouts_then_closes_nested_workspaces_on_main() {
+    let session = Session::new(false);
+    let checkout = session.directory.join("repo.feature");
+    let listing = json!({"schema": 2, "items": [{
+        "branch": "feature", "default_branch": {"integration": {"reason": "merge_adds_nothing"}},
+        "worktree": {"path": checkout, "main": false, "detached": false, "changes": {
+            "staged": false, "modified": false, "untracked": false,
+            "renamed": false, "deleted": false, "conflicted": false
+        }}
+    }]});
+    session.executable(
+        "git",
+        &format!(
+            r"
+printf 'worktree %s\0\0' '{}'
+if test -d '{}'; then printf 'worktree %s\0\0' '{}'; fi
+",
+            session.directory.join("repo").display(),
+            checkout.display(),
+            checkout.display()
+        ),
+    );
+    session.executable("wt", &format!(r#"
+test "$1" = -C
+cwd=$2
+shift 2
+case "$*" in
+ '--config-set list.json-schema=2 list --format=json --no-progressive') printf '%s\n' '{listing}' ;;
+ 'remove --foreground --format=json') rmdir "$cwd"; printf '%s\n' '{{"kind":"worktree","branch_outcome":"deleted"}}' ;;
+ *) exit 9 ;;
+esac
+"#));
+
+    assert_success(&run(session.command(&["run", "clean"]), None));
+    let popup = session.popup();
+    let outcome: Value =
+        serde_json::from_str(popup["env"]["WTHERDR_OUTCOME"].as_str().unwrap()).unwrap();
+    assert_eq!(outcome["error"], Value::Null);
+    assert_eq!(outcome["close_workspace_ids"], json!(["w2"]));
+    assert_eq!(popup["env"]["WTHERDR_SOURCE_WORKSPACE_ID"], "w1");
+    assert!(!checkout.exists());
+    assert!(
+        !session
+            .methods()
+            .iter()
+            .any(|method| method == "workspace.close")
+    );
+
+    let mut finish = session.command(&["finish"]);
+    for (name, value) in popup["env"].as_object().unwrap() {
+        finish.env(name, value.as_str().unwrap());
+    }
+    assert_success(&run(finish, None));
+    let requests = session.requests.lock().unwrap();
+    assert!(
+        requests
+            .iter()
+            .any(|request| request["method"] == "workspace.close"
+                && request["params"]["workspace_id"] == "w2")
+    );
+    assert_eq!(requests.last().unwrap()["method"], "workspace.focus");
+    assert_eq!(requests.last().unwrap()["params"]["workspace_id"], "w1");
 }
 
 #[test]
@@ -311,6 +379,77 @@ fn failed_creation_still_presents_the_error_popup() {
             .as_str()
             .unwrap()
             .contains("branch already exists")
+    );
+}
+
+#[test]
+fn switch_result_stays_on_the_selected_nested_workspace() {
+    let session = Session::new(false);
+    session.executable(
+        "git",
+        &format!(
+            "printf 'worktree %s\\0\\0worktree %s\\0\\0' '{}' '{}'",
+            session.directory.join("repo").display(),
+            session.directory.join("repo.feature").display()
+        ),
+    );
+    session.executable("wt", &format!("printf '%s\\n' '{}'", json!({
+        "action": "switched", "branch": "feature", "path": session.directory.join("repo.feature")
+    })));
+    let mut command = session.command(&["run", "switch"]);
+    command
+        .env("WTHERDR_SOURCE_WORKSPACE_ID", "w1")
+        .env("WTHERDR_SOURCE_CWD", session.directory.join("repo"));
+
+    assert_success(&run(command, None));
+    let popup = session.popup();
+    assert_eq!(popup["env"]["WTHERDR_SOURCE_WORKSPACE_ID"], "w2");
+    let requests = session.requests.lock().unwrap();
+    let open = requests
+        .iter()
+        .find(|request| request["method"] == "worktree.open")
+        .unwrap();
+    assert_eq!(open["params"]["workspace_id"], "w1");
+    assert_eq!(open["params"]["focus"], true);
+    assert_eq!(
+        open["params"]["path"],
+        session.directory.join("repo.feature").to_str().unwrap()
+    );
+}
+
+#[test]
+fn switch_from_nested_workspace_to_main_focuses_main_through_completion() {
+    let session = Session::new(false);
+    session.executable(
+        "git",
+        &format!(
+            "printf 'worktree %s\\0\\0' '{}'",
+            session.directory.join("repo").display()
+        ),
+    );
+    session.executable(
+        "wt",
+        &format!(
+            "printf '%s\\n' '{}'",
+            json!({
+                "action": "switched", "branch": "main", "path": session.directory.join("repo")
+            })
+        ),
+    );
+
+    assert_success(&run(session.command(&["run", "switch"]), None));
+    assert_eq!(session.popup()["env"]["WTHERDR_SOURCE_WORKSPACE_ID"], "w1");
+    let requests = session.requests.lock().unwrap();
+    assert!(
+        requests
+            .iter()
+            .any(|request| request["method"] == "workspace.focus"
+                && request["params"]["workspace_id"] == "w1")
+    );
+    assert!(
+        !requests
+            .iter()
+            .any(|request| request["method"] == "worktree.open")
     );
 }
 
