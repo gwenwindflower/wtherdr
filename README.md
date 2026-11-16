@@ -37,8 +37,12 @@ wtherdr status
 | `wtherdr.switch` | Show Worktrunk's native picker and focus or open the selected workspace. |
 | `wtherdr.merge` | Merge the current linked worktree and close its workspace when Worktrunk removes it. |
 | `wtherdr.remove` | Remove the current linked worktree, close its workspace, and focus its parent. |
+| `wtherdr.rebase` | Filter existing local and remote branches and rebase the current checkout onto the selected target. |
+| `wtherdr.hook` | Filter configured user and project hooks and run one in the current checkout. |
 
-Create, merge, and remove open a dialog first, where `enter` runs the workflow, `^c` clears the branch name, and `esc` cancels. Switch goes straight to Worktrunk's picker. The popup that runs Worktrunk closes itself when the command succeeds and waits for `enter` or `esc` when it fails, so the error stays readable.
+Create, merge, and remove open a dialog first, where `enter` runs the workflow, `^c` clears the branch name, and `esc` cancels. Switch goes straight to Worktrunk's picker. Rebase and hook pickers filter actual choices as you type; arrows and Ctrl-J/K/N/P navigate, Enter selects, and Esc cancels. Rebase starts on `main` when that branch exists.
+
+Completed actions other than successful creation open a compact result popup. A spinner runs while Herdr finishes workspace cleanup, then settles on success or failure. Enter or Esc closes the result; navigation keys scroll long diagnostics. Hook approvals remain Worktrunk's own prompts, and the selected hook runs in the foreground until it finishes.
 
 Invoke an action directly or map the action through Herdr's key configuration:
 
@@ -95,7 +99,7 @@ Apply the bindings to the running session:
 herdr server reload-config
 ```
 
-Worktrunk remains the source of truth for worktree paths, hook approval, merge strategy, and project configuration. wtherdr reads Worktrunk's machine result after the interactive command completes, then reconciles Herdr's workspaces. Cancelling a dialog or the picker leaves Herdr unchanged, and a failed merge or remove keeps its workspace.
+Worktrunk remains the source of truth for worktree paths, hook approval, merge strategy, and project configuration. wtherdr reads Worktrunk's machine result after the interactive command completes, then reconciles Herdr's workspaces. Cancelling a dialog leaves Herdr unchanged. Removals performed inside the native switch picker are reconciled after the picker exits, including on cancellation; ordinary merge or remove failures keep their workspace open.
 
 ## Install the binary yourself
 

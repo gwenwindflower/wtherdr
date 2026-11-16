@@ -25,7 +25,7 @@ SPEC.md and specs/ hold requirements; TODO.md holds active Phases and DONE.md re
 
 - Popup dimensions live in the manifest alone. Entrypoint ids in `PopupWorkflow` mirror it; run entrypoints are `<workflow>-run`.
 - Herdr and Worktrunk sit behind the `Herdr` and `Worktrunk` traits so workflow rules stay provable without a live session.
-- Interactive child processes inherit the terminal; capture only the machine-readable output used for reconciliation.
+- Preserve interactive stdin and terminal behavior; relay stderr live and retain bounded diagnostics for result popups.
 - Herdr API paths are absolute. Popup context travels in `WTHERDR_*` environment variables, never in argv.
 - Errors name the failed operation and the workspace or path involved, and say what survived when Worktrunk succeeded but Herdr did not.
 

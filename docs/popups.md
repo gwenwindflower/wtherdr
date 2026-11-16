@@ -5,7 +5,9 @@
 | Entrypoint | Command | Size |
 | --- | --- | --- |
 | `create`, `merge`, `remove` | `wtherdr prompt <workflow>` | 72 × 7 cells |
-| `create-run`, `switch-run`, `merge-run`, `remove-run` | `wtherdr run <workflow>` | 90% × 85% |
+| `rebase`, `hook` | `wtherdr prompt <workflow>` | 80 × 18 cells |
+| `create-run`, `switch-run`, `merge-run`, `remove-run`, `rebase-run`, `hook-run` | `wtherdr run <workflow>` | 90% × 85% |
+| `complete` | `wtherdr finish` | 72 × 7 cells |
 
 Dimensions live in `herdr-plugin.toml` and nowhere else: numbers are outer terminal cells, strings are a percentage of the terminal area, and anything below Herdr's popup minimum is clamped. `plugin.pane.open` can override them, but wtherdr sends geometry-free requests so the manifest stays the single place to retune a popup. Manifest changes need `herdr plugin link .` again; Rust changes need a reinstall.
 
@@ -24,7 +26,8 @@ Dimensions live in `herdr-plugin.toml` and nowhere else: numbers are outer termi
 - Herdr requires a pane title and draws it on the popup border, so the dialog renders no title of its own.
 - `enter` confirms, `^c` clears the input, `esc` cancels. An escape sequence such as an arrow key is not a cancellation: `terminal::read_key` waits briefly for a following byte before deciding.
 - Dialogs draw on the alternate screen and restore raw mode and the cursor on the way out, including when a workflow fails.
-- A run popup that fails prints its error, then the same hint row with `close` actions, and waits for `enter` or `esc`.
+- Branch and hook pickers filter existing choices as the user types. Arrows and Ctrl-J/K/N/P move the selection; Enter submits and Esc cancels. Rebase starts on `main` when it exists; an absent default requires explicit selection.
+- Completed actions other than successful creation hand off to a fresh result popup. Its spinner runs during workspace cleanup, then settles into a single message row with Enter and Esc to close. Long messages and errors can be scrolled with the navigation keys.
 
 `dialog::frame` is pure and takes an explicit width, so layout is tested without a terminal.
 

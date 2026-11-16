@@ -5,3 +5,4 @@ wtherdr runs native Worktrunk workflows in Herdr popups and reconciles nested wo
 ## Domain specs
 
 - @specs/dev-release.md
+- @specs/wf-actions.md

@@ -87,3 +87,55 @@ placement = "popup"
 width = "90%"
 height = "85%"
 command = ["wtherdr", "run", "remove"]
+
+[[actions]]
+id = "rebase"
+title = "wt rebase"
+contexts = ["workspace"]
+command = ["wtherdr", "popup", "rebase"]
+
+[[actions]]
+id = "hook"
+title = "wt hook"
+contexts = ["workspace"]
+command = ["wtherdr", "popup", "hook"]
+
+[[panes]]
+id = "rebase"
+title = "wt rebase"
+placement = "popup"
+width = 80
+height = 18
+command = ["wtherdr", "prompt", "rebase"]
+
+[[panes]]
+id = "hook"
+title = "wt hook"
+placement = "popup"
+width = 80
+height = 18
+command = ["wtherdr", "prompt", "hook"]
+
+[[panes]]
+id = "rebase-run"
+title = "wt rebase"
+placement = "popup"
+width = "90%"
+height = "85%"
+command = ["wtherdr", "run", "rebase"]
+
+[[panes]]
+id = "hook-run"
+title = "wt hook"
+placement = "popup"
+width = "90%"
+height = "85%"
+command = ["wtherdr", "run", "hook"]
+
+[[panes]]
+id = "complete"
+title = "wt result"
+placement = "popup"
+width = 72
+height = 7
+command = ["wtherdr", "finish"]

@@ -7,13 +7,15 @@ use anyhow::{Context, Result, bail};
 use clap::Parser;
 use serde_json::Value;
 
+use wtherdr::actions::Actions;
 use wtherdr::cli::{Cli, Command, PopupWorkflow};
 use wtherdr::dialog;
 use wtherdr::herdr::Api;
 use wtherdr::invocation::source_workspace;
-use wtherdr::model::{SourceWorkspace, SwitchMode};
+use wtherdr::model::{RepositoryContext, SourceWorkspace, SwitchMode, WorkflowOutcome};
 use wtherdr::workflow::{Engine, Herdr, require_linked_worktree};
 use wtherdr::worktrunk::CommandRunner;
+use wtherdr::{completion, selector};
 
 fn main() -> ExitCode {
     match run(Cli::parse()) {
@@ -45,14 +47,23 @@ fn run(cli: Cli) -> Result<()> {
             base,
             focus,
         } => execute(workflow, branch, base, focus),
-        Command::Handoff { workflow } => {
+        Command::Handoff { workflow, finish } => {
             let source = workflow_source()?;
-            Api::from_env().open_popup_when_free(
-                workflow.run_entrypoint(),
+            let opened = Api::from_env().open_popup_when_free(
+                if finish {
+                    "complete"
+                } else {
+                    workflow.run_entrypoint()
+                },
                 &source,
                 &carried_input(),
-            )
+            );
+            if finish && let Err(error) = opened {
+                return recover_handoff(&error);
+            }
+            opened
         }
+        Command::Finish { result } => finish_workflow(result.as_deref()),
         Command::Status => {
             status();
             Ok(())
@@ -85,11 +96,28 @@ fn prompt(workflow: PopupWorkflow) -> Result<()> {
             Vec::new()
         }
         PopupWorkflow::Switch => bail!("switch opens Worktrunk's picker without a dialog"),
+        PopupWorkflow::Rebase => {
+            let branches = Actions::default().branches(&source.cwd)?;
+            let Some(target) =
+                selector::choose(&repository.repo_name, "rebase", &branches, Some("main"))?
+            else {
+                return Ok(());
+            };
+            vec![("WTHERDR_BASE", target)]
+        }
+        PopupWorkflow::Hook => {
+            let hooks = Actions::default().hooks(&source.cwd)?;
+            let Some(hook) = selector::choose(&repository.repo_name, "run hook", &hooks, None)?
+            else {
+                return Ok(());
+            };
+            vec![("WTHERDR_HOOK", hook)]
+        }
     };
-    hand_off(workflow, &input)
+    hand_off(workflow, &input, false)
 }
 
-fn hand_off(workflow: PopupWorkflow, input: &[(&str, String)]) -> Result<()> {
+fn hand_off(workflow: PopupWorkflow, input: &[(&str, String)], finish: bool) -> Result<()> {
     let mut opener = Process::new(std::env::current_exe()?);
     opener
         .arg("handoff")
@@ -98,6 +126,9 @@ fn hand_off(workflow: PopupWorkflow, input: &[(&str, String)]) -> Result<()> {
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .process_group(0);
+    if finish {
+        opener.arg("--finish");
+    }
     for (name, value) in input {
         opener.env(name, value);
     }
@@ -114,6 +145,23 @@ fn execute(
     focus: Option<bool>,
 ) -> Result<()> {
     let source = workflow_source()?;
+    let repository = Api::from_env().repository_context(&source)?;
+    let completion_source = SourceWorkspace {
+        workspace_id: repository.parent_workspace_id.clone(),
+        cwd: repository.root_path.clone(),
+    };
+    let result = perform(workflow, &source, &repository, branch, base, focus);
+    present(workflow, result, completion_source)
+}
+
+fn perform(
+    workflow: PopupWorkflow,
+    source: &SourceWorkspace,
+    repository: &RepositoryContext,
+    branch: Option<String>,
+    base: Option<String>,
+    focus: Option<bool>,
+) -> Result<WorkflowOutcome> {
     let engine = engine();
     match workflow {
         PopupWorkflow::Create => {
@@ -134,7 +182,7 @@ fn execute(
                 Ok,
             )?;
             engine.switch(
-                &source,
+                source,
                 &SwitchMode::Create {
                     branch,
                     base,
@@ -142,17 +190,163 @@ fn execute(
                 },
             )
         }
-        PopupWorkflow::Switch => engine.switch(&source, &SwitchMode::Pick),
-        PopupWorkflow::Merge => engine.merge(&source),
-        PopupWorkflow::Remove => engine.remove(&source),
+        PopupWorkflow::Switch => engine.switch(source, &SwitchMode::Pick),
+        PopupWorkflow::Merge => engine.merge(source),
+        PopupWorkflow::Remove => engine.remove(source),
+        PopupWorkflow::Rebase => {
+            let target = base
+                .or_else(|| std::env::var("WTHERDR_BASE").ok())
+                .filter(|target| !target.trim().is_empty())
+                .unwrap_or_else(|| "main".into());
+            Actions::default().rebase(&source.cwd, &target)?;
+            Ok(WorkflowOutcome::completed(
+                repository,
+                format!(
+                    "Rebased {} onto {target}",
+                    repository.source_label.as_deref().unwrap_or("checkout")
+                ),
+            ))
+        }
+        PopupWorkflow::Hook => {
+            let hook =
+                std::env::var("WTHERDR_HOOK").context("hook needs a configured hook selection")?;
+            Actions::default().run_hook(&source.cwd, &hook)?;
+            Ok(WorkflowOutcome::completed(
+                repository,
+                format!("Finished {hook}"),
+            ))
+        }
     }
 }
 
+fn present(
+    workflow: PopupWorkflow,
+    result: Result<WorkflowOutcome>,
+    completion_source: SourceWorkspace,
+) -> Result<()> {
+    if std::env::var_os("HERDR_PLUGIN_ENTRYPOINT_ID").is_none() {
+        let outcome = result?;
+        Api::from_env().finish_cleanup(&outcome)?;
+        if let Some(error) = outcome.error {
+            bail!("{error}");
+        }
+        if !outcome.cancelled {
+            println!("{}", outcome.message);
+        }
+        return Ok(());
+    }
+    let outcome = result.unwrap_or_else(|error| WorkflowOutcome {
+        message: format!("{} did not finish", workflow.id()),
+        completion_source,
+        close_workspace_ids: Vec::new(),
+        cancelled: false,
+        error: Some(format!("{error:#}")),
+    });
+    if outcome.cancelled {
+        return Ok(());
+    }
+    if workflow == PopupWorkflow::Create && outcome.error.is_none() {
+        return Api::from_env().finish_cleanup(&outcome);
+    }
+    hand_off(
+        workflow,
+        &[
+            ("WTHERDR_OUTCOME", serde_json::to_string(&outcome)?),
+            (
+                "WTHERDR_SOURCE_WORKSPACE_ID",
+                outcome.completion_source.workspace_id.clone(),
+            ),
+            (
+                "WTHERDR_SOURCE_CWD",
+                outcome.completion_source.cwd.to_string_lossy().into_owned(),
+            ),
+            ("WTHERDR_WORKFLOW", workflow.id().to_owned()),
+        ],
+        true,
+    )
+}
+
+fn finish_workflow(path: Option<&std::path::Path>) -> Result<()> {
+    let payload = path.map_or_else(
+        || std::env::var("WTHERDR_OUTCOME").context("completion popup needs a workflow result"),
+        |path| {
+            std::fs::read_to_string(path)
+                .with_context(|| format!("could not read workflow result {}", path.display()))
+        },
+    )?;
+    let saved: serde_json::Value = serde_json::from_str(&payload)?;
+    let outcome: WorkflowOutcome =
+        serde_json::from_value(saved.get("outcome").unwrap_or(&saved).clone())?;
+    let mut error = outcome.error.clone();
+    let workflow = saved
+        .get("workflow")
+        .and_then(Value::as_str)
+        .map(str::to_owned)
+        .or_else(|| std::env::var("WTHERDR_WORKFLOW").ok())
+        .context("completion popup needs a workflow name")?;
+    completion::show(&workflow, &outcome.message, &mut error, || {
+        Api::from_env().finish_cleanup(&outcome)
+    })
+}
+
+fn recover_handoff(error: &anyhow::Error) -> Result<()> {
+    use std::io::Write;
+    use std::os::unix::fs::OpenOptionsExt;
+    let mut outcome: WorkflowOutcome = serde_json::from_str(&std::env::var("WTHERDR_OUTCOME")?)?;
+    for workspace_id in std::mem::take(&mut outcome.close_workspace_ids) {
+        let mut cleanup = outcome.clone();
+        cleanup.close_workspace_ids = vec![workspace_id.clone()];
+        if let Err(error) = Api::from_env().finish_cleanup(&cleanup) {
+            let detail = format!("{error:#}");
+            outcome.error = Some(
+                outcome
+                    .error
+                    .map_or_else(|| detail.clone(), |error| format!("{error}\n{detail}")),
+            );
+            outcome.close_workspace_ids.push(workspace_id);
+        }
+    }
+    let workflow = std::env::var("WTHERDR_WORKFLOW")?;
+    let path = std::env::temp_dir().join(format!("wtherdr-result-{}.json", std::process::id()));
+    let mut file = std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .mode(0o600)
+        .open(&path)?;
+    file.write_all(&serde_json::to_vec(
+        &serde_json::json!({ "workflow": workflow, "outcome": outcome }),
+    )?)?;
+    let body = format!(
+        "Could not open the {workflow} result popup: {error:#}. Result saved at {}. Read it with wtherdr finish --result {}",
+        path.display(),
+        path.display()
+    );
+    let _ = Process::new("herdr")
+        .args([
+            "notification",
+            "show",
+            "wtherdr result saved",
+            "--body",
+            &body,
+            "--sound",
+            "request",
+        ])
+        .status();
+    bail!("{body}")
+}
+
 fn carried_input() -> Vec<(&'static str, String)> {
-    ["WTHERDR_BRANCH", "WTHERDR_BASE", "WTHERDR_FOCUS"]
-        .into_iter()
-        .filter_map(|name| std::env::var(name).ok().map(|value| (name, value)))
-        .collect()
+    [
+        "WTHERDR_BRANCH",
+        "WTHERDR_BASE",
+        "WTHERDR_FOCUS",
+        "WTHERDR_HOOK",
+        "WTHERDR_OUTCOME",
+        "WTHERDR_WORKFLOW",
+    ]
+    .into_iter()
+    .filter_map(|name| std::env::var(name).ok().map(|value| (name, value)))
+    .collect()
 }
 
 fn engine() -> Engine<Api, CommandRunner> {
